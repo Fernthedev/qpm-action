@@ -1,4 +1,6 @@
-import { QPM_Rust_ARTIFACT_URL } from "./const.ts";
+import { QPM_Rust_ARTIFACT_URL } from "./const"
+import * as node_os from "os"
+import axios from "axios"
 
 /**
  * https://docs.github.com/en/rest/reference/actions#artifacts
@@ -34,17 +36,18 @@ export interface ArtifactsResponse {
 }
 
 export function GetQPM_RustExecutableName() {
-    let os: "darwin" | "linux" | "windows" | "macos" = Deno.build.os;
+    let os: string = node_os.platform()
 
-    if (os === "darwin") os = "macos";
+    if (os === "win32") os = "windows"
+    if (os === "darwin") os = "macos"
 
     return `${os}-qpm-rust`
 }
 
 export async function GetLatestQPMArtifact() {
-    const response = await fetch(QPM_Rust_ARTIFACT_URL);
-    const artifactsJson = await response.json() as ArtifactsResponse
-    const artifactName = GetQPM_RustExecutableName();
+    const response = await axios.get(QPM_Rust_ARTIFACT_URL)
+    const artifactsJson: ArtifactsResponse = await response.data
+    const artifactName = GetQPM_RustExecutableName()
 
     return artifactsJson.artifacts.find(artifact => artifact.name === artifactName)
 }
