@@ -2,10 +2,25 @@ name: 'Your name here'
 description: 'Provide a description here'
 author: 'Your name or organization here'
 inputs:
-  milliseconds: # change this
-    required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+  publish: # change this
+    required: false
+    description: 'Denotes if this will publish to QPM qpackages.com'
+    default: 'false'
+  version:
+    required: false
+    description: 'Specifies version to publish. Requires publish'
+  upload_mode:
+    required: false
+    description: 'Specifies if the action should upload the binaries to Github release or artifact'
 runs:
-  using: 'node16'
-  main: 'dist/index.js'
+  using: 'docker'
+  image: denoland/deno:1.20.6
+  args:
+    - run
+    - --allow-net
+    - --allow-read
+    - --allow-run # todo: check if required
+    - --allow-write #=./qpm.json # todo: check if required
+    - src/main.ts
+#  main: 'dist/index.js'
+
