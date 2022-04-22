@@ -12,6 +12,9 @@ inputs:
   upload_mode:
     required: false
     description: 'Specifies if the action should upload the binaries to Github release or artifact'
+  workflow_token:
+    required: false
+    description: 'Specifies the workflow Github Secret Token required for some functionality'
 runs:
   using: 'node16'
   main: 'dist/index.js'

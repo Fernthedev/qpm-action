@@ -1,2 +1,2 @@
-export const QPM_Rust_WORKFLOW_URL = "https://api.github.com/repos/RedBrumbler/QuestPackageManager-Rust/actions/workflows/WORKFLOW.yml/runs"
-export const QPM_Rust_ARTIFACT_URL = "https://api.github.com/repos/RedBrumbler/QuestPackageManager-Rust/actions/artifacts"
+export const QPM_REPOSITORY_OWNER = "RedBrumbler"
+export const QPM_REPOSITORY_NAME = "QuestPackageManager-Rust"
