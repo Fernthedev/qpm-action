@@ -21,5 +21,7 @@ jobs:
 
       - name: Test workflow
         uses: ./
+        with:
+          workflow_token: ${{secrets.GITHUB_TOKEN}}
         # with:
           # milliseconds: 1000
