@@ -8,7 +8,6 @@ import * as process from "process"
 import * as zip from "@zip.js/zip.js"
 import { getQPM_RustExecutableName } from './api'
 import { QPM_REPOSITORY_NAME, QPM_REPOSITORY_OWNER } from './const'
-import axios from 'axios'
 import { GitHub } from '@actions/github/lib/utils'
 import { QPMSharedPackage, readQPM, writeQPM } from './qpmf'
 
@@ -36,13 +35,22 @@ async function downloadQpm(octokit: InstanceType<typeof GitHub>): Promise<void> 
 
   if (artifactToDownload === undefined) throw new Error(`Unable to find artifact ${expectedArtifactName}`)
 
+  core.debug(`Downloading from ${artifactToDownload.archive_download_url}`)
+  const artifactZipData = await octokit.rest.actions.downloadArtifact({
+    owner: QPM_REPOSITORY_OWNER,
+    repo: QPM_REPOSITORY_NAME,
+    artifact_id: artifactToDownload.id,
+    archive_format: "zip"
+  })
 
-  const artifactZipData = await axios.get(artifactToDownload.archive_download_url)
-  const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data))
+  const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data as never))
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, "QPM")
   await io.mkdirP(extractDirectory)
+
+  
+  core.debug("Unzipping")
 
   // get all entries from the zip
   for (const entry of await artifactZip.getEntries()) {
@@ -76,7 +84,7 @@ async function doPublish(octokit: InstanceType<typeof GitHub>, version?: string)
 
   const branch = `version-${version}`
   qpmFile.config.info.additionalData.branchName = branch
-  
+
   // TODO: Debug SO link
   // TODO: Release SO link
   await writeQPM(qpmSharedPath, qpmFile)
@@ -156,6 +164,7 @@ async function run(): Promise<void> {
     // core.setOutput('time', new Date().toTimeString())
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
+    core.isDebug
   }
 }
 
