@@ -109,6 +109,10 @@ const zip = __importStar(__nccwpck_require__(8642));
 const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const axios_1 = __importDefault(__nccwpck_require__(6545));
+const qpmf_1 = __nccwpck_require__(3072);
+function stringOrUndefined(str) {
+    return str === "" ? undefined : str;
+}
 // why
 // eslint-disable-next-line no-shadow
 var UploadMode;
@@ -117,48 +121,89 @@ var UploadMode;
     UploadMode["Artifact"] = "artifact";
     UploadMode["None"] = "none";
 })(UploadMode || (UploadMode = {}));
+function downloadQpm(octokit) {
+    var _a;
+    return __awaiter(this, void 0, void 0, function* () {
+        const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
+            owner: const_1.QPM_REPOSITORY_OWNER,
+            repo: const_1.QPM_REPOSITORY_NAME,
+        });
+        const expectedArtifactName = (0, api_1.getQPM_RustExecutableName)();
+        core.debug(`Looking for ${expectedArtifactName} in ${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}`);
+        const artifactToDownload = artifacts.data.artifacts.find(e => e.name === expectedArtifactName);
+        if (artifactToDownload === undefined)
+            throw new Error(`Unable to find artifact ${expectedArtifactName}`);
+        const artifactZipData = yield axios_1.default.get(artifactToDownload.archive_download_url);
+        const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data));
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, "QPM");
+        yield io.mkdirP(extractDirectory);
+        // get all entries from the zip
+        for (const entry of yield artifactZip.getEntries()) {
+            const text = yield ((_a = entry.getData) === null || _a === void 0 ? void 0 : _a.call(entry, 
+            // writer
+            new zip.Uint8ArrayWriter()));
+            // text contains the entry data as a String
+            const fileStream = fs.createWriteStream(path.join(extractDirectory, entry.filename));
+            fileStream.write(text);
+            fileStream.end();
+        }
+        // close the ZipReader
+        yield artifactZip.close();
+        // Add "$GITHUB_WORKSPACE/QPM/" to path
+        core.addPath(extractDirectory);
+        core.debug(`Added ${extractDirectory} to path`);
+    });
+}
+function doPublish(octokit, version) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const qpmSharedPath = path.join(process.env.GITHUB_WORKSPACE, "qpm.shared.json");
+        const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
+        if (version) {
+            qpmFile.config.info.version = version;
+        }
+        version !== null && version !== void 0 ? version : (version = qpmFile.config.info.version);
+        const branch = `version-${version}`;
+        qpmFile.config.info.additionalData.branchName = branch;
+        // TODO: Debug SO link
+        // TODO: Release SO link
+        yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
+        const git = octokit.rest.git;
+        // create commit
+        const blob = yield git.createBlob(Object.assign(Object.assign({}, github.context.repo), { content: JSON.stringify(qpmFile) }));
+        const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [github.context.ref], message: "Update version and post restore", tree: blob.data.sha // ?
+         }));
+        git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: github.context.ref, sha: commit.data.sha }));
+        // create tag
+        yield git.createTag(Object.assign(Object.assign({}, github.context.repo), { tag: version, message: "Version", object: commit.data.sha, type: "commit" }));
+        // create branch
+        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+        const ref = `refs/heads/${branch}`;
+        try {
+            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref }));
+        }
+        catch (e) {
+            core.warning(`Deleting existing branch failed due to ${e}`);
+        }
+        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref, sha: commit.data.sha }));
+        // do github stuff
+    });
+}
 function run() {
-    var _a, _b, _c;
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const publish = (_a = core.getBooleanInput("publish")) !== null && _a !== void 0 ? _a : false;
-            const version = core.getInput("version");
-            const uploadMode = (_b = core.getInput("upload_mode")) !== null && _b !== void 0 ? _b : UploadMode.None;
+            const version = stringOrUndefined(core.getInput("version"));
+            const uploadMode = (_b = stringOrUndefined(core.getInput("upload_mode"))) !== null && _b !== void 0 ? _b : UploadMode.None;
             // This should be a token with access to your repository scoped in as a secret.
             // The YML workflow will need to set myToken with the GitHub Secret Token
             // myToken: ${{ secrets.GITHUB_TOKEN }}
             // https://help.github.com/en/actions/automating-your-workflow-with-github-actions/authenticating-with-the-github_token#about-the-github_token-secret
             const myToken = core.getInput('workflow_token');
             const octokit = github.getOctokit(myToken);
-            const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
-                owner: const_1.QPM_REPOSITORY_OWNER,
-                repo: const_1.QPM_REPOSITORY_NAME,
-            });
-            const expectedArtifactName = (0, api_1.getQPM_RustExecutableName)();
-            core.debug(`Looking for ${expectedArtifactName} in ${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}`);
-            const artifactToDownload = artifacts.data.artifacts.find(e => e.name === expectedArtifactName);
-            if (artifactToDownload === undefined)
-                throw new Error(`Unable to find artifact ${expectedArtifactName}`);
-            const artifactZipData = yield axios_1.default.get(artifactToDownload.archive_download_url);
-            const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data));
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, "QPM");
-            yield io.mkdirP(extractDirectory);
-            // get all entries from the zip
-            for (const entry of yield artifactZip.getEntries()) {
-                const text = yield ((_c = entry.getData) === null || _c === void 0 ? void 0 : _c.call(entry, 
-                // writer
-                new zip.Uint8ArrayWriter()));
-                // text contains the entry data as a String
-                const fileStream = fs.createWriteStream(path.join(extractDirectory, entry.filename));
-                fileStream.write(text);
-                fileStream.end();
-            }
-            // close the ZipReader
-            yield artifactZip.close();
-            // Add "$GITHUB_WORKSPACE/QPM/" to path
-            core.addPath(extractDirectory);
-            core.debug(`Added ${extractDirectory} to path`);
+            yield downloadQpm(octokit);
             // const ms: string = core.getInput('milliseconds')
             // core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
             // core.debug(new Date().toTimeString())
@@ -172,6 +217,82 @@ function run() {
     });
 }
 run();
+
+
+/***/ }),
+
+/***/ 3072:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.writeQPM = exports.readQPM = void 0;
+const fs = __importStar(__nccwpck_require__(5747));
+function readQPM(file) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const fileData = yield new Promise((resolve, reject) => {
+            fs.readFile(file, undefined, (err, data) => {
+                if (err) {
+                    reject(err);
+                }
+                else {
+                    resolve(data.toString());
+                }
+            });
+        });
+        return JSON.parse(fileData);
+    });
+}
+exports.readQPM = readQPM;
+function writeQPM(file, qpm) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return new Promise((resolve, reject) => {
+            const qpmStr = JSON.stringify(qpm);
+            fs.writeFile(file, qpmStr, (err) => {
+                if (err) {
+                    reject(err);
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
+    });
+}
+exports.writeQPM = writeQPM;
 
 
 /***/ }),
