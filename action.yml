@@ -30,7 +30,6 @@ inputs:
   restore:
     required: false
     description: 'Whether restore should be called'
-
   workflow_token:
     required: false
     description: 'Specifies the workflow Github Secret Token required for some functionality'
