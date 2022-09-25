@@ -147,10 +147,10 @@ function downloadQpm(octokit) {
         for (const entry of yield artifactZip.getEntries()) {
             if (!entry.getData)
                 continue;
+            if (!(entry instanceof zip.fs.ZipFileEntry))
+                continue;
             core.debug(`Extracting ${entry.filename}`);
-            const data = yield entry.getData(
-            // writer
-            new zip.Uint8ArrayWriter());
+            const data = yield entry.getUint8Array();
             // text contains the entry data as a String
             const fileStream = fs.createWriteStream(path.join(extractDirectory, entry.filename), {
                 autoClose: true

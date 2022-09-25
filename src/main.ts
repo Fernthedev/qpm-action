@@ -70,13 +70,11 @@ async function downloadQpm(
   // get all entries from the zip
   for (const entry of await artifactZip.getEntries()) {
     if (!entry.getData) continue
+    if (!(entry instanceof zip.fs.ZipFileEntry)) continue
 
     core.debug(`Extracting ${entry.filename}`)
 
-    const data = await entry.getData(
-      // writer
-      new zip.Uint8ArrayWriter()
-    )
+    const data = await entry.getUint8Array()
     // text contains the entry data as a String
     const fileStream = fs.createWriteStream(
       path.join(extractDirectory, entry.filename),
