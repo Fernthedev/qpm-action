@@ -135,7 +135,7 @@ function downloadQpm(octokit, token) {
         });
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, 'QPM');
-        const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url, undefined, token);
+        const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url, undefined, `Bearer ${token}`);
         const qpmToolExtract = yield tc.extractZip(qpmTool);
         cachedPath = yield tc.cacheDir(qpmToolExtract, 'qpm', artifactToDownload.id.toString());
         // Add "$GITHUB_WORKSPACE/QPM/" to path
