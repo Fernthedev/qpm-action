@@ -43,22 +43,22 @@ async function downloadQpm(
     throw new Error(`Unable to find artifact ${expectedArtifactName}`)
 
   core.debug(`Downloading from ${artifactToDownload.archive_download_url}`)
-  const artifactZipData = await octokit.rest.actions.downloadArtifact({
+  const artifactDownload = await octokit.rest.actions.downloadArtifact({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
     artifact_id: artifactToDownload.id,
     archive_format: 'zip'
   })
 
-  core.debug(`Type of response download data: ${typeof artifactZipData.data}`)
-  core.debug(
-    `Data: ${
-      (artifactZipData.data as object).constructor.name
-    } ${JSON.stringify(artifactZipData.data)}`
-  )
+  const artifactZipData = artifactDownload.data as ArrayBuffer
+
+  core.debug(`Type of response download data: ${typeof artifactZipData}`)
+  core.debug(`Data: ${(artifactZipData as object).constructor.name}`)
+
+  
 
   const artifactZip = new zip.ZipReader(
-    new zip.Uint8ArrayReader(artifactZipData.data as never)
+    new zip.Uint8ArrayReader(new Uint8Array(artifactZipData))
   )
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

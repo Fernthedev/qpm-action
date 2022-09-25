@@ -129,15 +129,16 @@ function downloadQpm(octokit) {
         if (artifactToDownload === undefined)
             throw new Error(`Unable to find artifact ${expectedArtifactName}`);
         core.debug(`Downloading from ${artifactToDownload.archive_download_url}`);
-        const artifactZipData = yield octokit.rest.actions.downloadArtifact({
+        const artifactDownload = yield octokit.rest.actions.downloadArtifact({
             owner: const_1.QPM_REPOSITORY_OWNER,
             repo: const_1.QPM_REPOSITORY_NAME,
             artifact_id: artifactToDownload.id,
             archive_format: 'zip'
         });
-        core.debug(`Type of response download data: ${typeof artifactZipData.data}`);
-        core.debug(`Data: ${artifactZipData.data.constructor.name} ${JSON.stringify(artifactZipData.data)}`);
-        const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data));
+        const artifactZipData = artifactDownload.data;
+        core.debug(`Type of response download data: ${typeof artifactZipData}`);
+        core.debug(`Data: ${artifactZipData.constructor.name}`);
+        const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(new Uint8Array(artifactZipData)));
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, 'QPM');
         yield io.mkdirP(extractDirectory);
