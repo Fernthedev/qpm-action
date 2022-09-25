@@ -140,7 +140,7 @@ function downloadQpm(octokit, token) {
         core.debug(`Added ${cachedPath} to path`);
         yield core.group("cache files", () => __awaiter(this, void 0, void 0, function* () {
             for (const file of fs.readdirSync(cachedPath)) {
-                core.debug(`${file} ${fs.statSync(path.join(cachedPath, file)).isDirectory()}`);
+                core.debug(`${file} ${fs.statSync(path.join(cachedPath, file)).isFile()}`);
             }
             return Promise.resolve();
         }));
@@ -152,8 +152,8 @@ function run() {
         try {
             const { restore, token } = (0, utils_1.getActionParameters)();
             const octokit = github.getOctokit(token);
-            yield downloadQpm(octokit, token);
-            const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
+            const qpmRustPath = yield downloadQpm(octokit, token);
+            const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
             // Config path is: E:\SSDUse\AppData\QPM_Temp
             const cachePath = cachePathOutput.split('Config path is: ')[1];
             const paths = [cachePath];
@@ -161,7 +161,7 @@ function run() {
             const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-'];
             const cacheKey = yield cache.restoreCache(paths, key, restoreKeys);
             if (restore) {
-                yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_RESTORE}`);
+                yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_RESTORE}`);
             }
             yield cache.saveCache(paths, cacheKey !== null && cacheKey !== void 0 ? cacheKey : key);
             // const ms: string = core.getInput('milliseconds')
