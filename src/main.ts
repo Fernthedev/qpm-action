@@ -54,7 +54,7 @@ async function downloadQpm(
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
 
-  const qpmTool = await tc.downloadTool(artifactDownload.url)
+  const qpmTool = await tc.downloadTool(artifactDownload.data.archive_download_url)
   const qpmToolExtract = await tc.extractZip(qpmTool)
   cachedPath = await tc.cacheDir(
     qpmToolExtract,
