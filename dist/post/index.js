@@ -11025,16 +11025,16 @@ function stringOrUndefined(str) {
     return str.trim() === '' ? undefined : str;
 }
 function getActionParameters() {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b;
     const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
     const version = stringOrUndefined(core.getInput('version'));
-    const qpmReleaseBin = (_b = core.getBooleanInput('qpm_release_bin')) !== null && _b !== void 0 ? _b : false;
-    const qpmDebugBin = (_c = core.getBooleanInput('qpm_debug_bin')) !== null && _c !== void 0 ? _c : false;
+    const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
+    const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
     const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
-    const qpmPath = (_d = stringOrUndefined(core.getInput('qpm_json'))) !== null && _d !== void 0 ? _d : 'qpm.json';
-    const cache = (_e = core.getBooleanInput('cache')) !== null && _e !== void 0 ? _e : true;
-    const cacheLockfile = (_f = core.getBooleanInput('cache_lockfile')) !== null && _f !== void 0 ? _f : true;
-    const restore = (_g = core.getBooleanInput('restore')) !== null && _g !== void 0 ? _g : true;
+    const qpmPath = (_b = stringOrUndefined(core.getInput('qpm_json'))) !== null && _b !== void 0 ? _b : 'qpm.json';
+    const cache = core.getBooleanInput('cache');
+    const cacheLockfile = core.getBooleanInput('cache_lockfile');
+    const restore = core.getBooleanInput('restore');
     // This should be a token with access to your repository scoped in as a secret.
     // The YML workflow will need to set myToken with the GitHub Secret Token
     // myToken: ${{ secrets.GITHUB_TOKEN }}
