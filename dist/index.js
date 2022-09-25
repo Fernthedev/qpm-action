@@ -109,7 +109,7 @@ const process = __importStar(__nccwpck_require__(1765));
 const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const utils_1 = __nccwpck_require__(918);
-function downloadQpm(octokit) {
+function downloadQpm(octokit, token) {
     return __awaiter(this, void 0, void 0, function* () {
         const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
             owner: const_1.QPM_REPOSITORY_OWNER,
@@ -135,7 +135,7 @@ function downloadQpm(octokit) {
         });
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, 'QPM');
-        const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url);
+        const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url, undefined, token);
         const qpmToolExtract = yield tc.extractZip(qpmTool);
         cachedPath = yield tc.cacheDir(qpmToolExtract, 'qpm', artifactToDownload.id.toString());
         // Add "$GITHUB_WORKSPACE/QPM/" to path
@@ -149,7 +149,7 @@ function run() {
         try {
             const { restore, token } = (0, utils_1.getActionParameters)();
             const octokit = github.getOctokit(token);
-            const qpm_exec = yield downloadQpm(octokit);
+            const qpm_exec = yield downloadQpm(octokit, token);
             const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`${qpm_exec} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
             // Config path is: E:\SSDUse\AppData\QPM_Temp
             const cachePath = cachePathOutput.split('Config path is: ')[1];

@@ -18,7 +18,8 @@ import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
 
 async function downloadQpm(
-  octokit: InstanceType<typeof GitHub>
+  octokit: InstanceType<typeof GitHub>,
+  token: string
 ): Promise<string | undefined> {
   const artifacts = await octokit.rest.actions.listArtifactsForRepo({
     owner: QPM_REPOSITORY_OWNER,
@@ -54,7 +55,7 @@ async function downloadQpm(
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
 
-  const qpmTool = await tc.downloadTool(artifactDownload.data.archive_download_url)
+  const qpmTool = await tc.downloadTool(artifactDownload.data.archive_download_url, undefined, token)
   const qpmToolExtract = await tc.extractZip(qpmTool)
   cachedPath = await tc.cacheDir(
     qpmToolExtract,
@@ -74,7 +75,7 @@ async function run(): Promise<void> {
     const {restore, token} = getActionParameters()
 
     const octokit = github.getOctokit(token)
-    const qpm_exec = await downloadQpm(octokit)
+    const qpm_exec = await downloadQpm(octokit, token)
 
     const cachePathOutput = (
       await githubExecAsync(`${qpm_exec} ${QPM_COMMAND_CACHE_PATH}`)
