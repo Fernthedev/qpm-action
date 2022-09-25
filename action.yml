@@ -12,24 +12,29 @@ inputs:
   cache:
     required: false
     description: 'Specifies if the action should handle caches'
+    default: 'true'
   cache_lockfile:
     required: false
     description: 'Specifies if the action should use caches with qpm.shared.json'
+    default: 'true'
   qpm_json:
     required: false
     description: 'Specifies the path for qpm.json'
   qpm_release_bin:
     required: false
     description: 'Specifies the path for the release binary or debug if not specified'
+    default: 'false'
   qpm_debug_bin:
     required: false
     description: 'Specifies the path for the debug binary'
+    default: 'false'
   qpm_qmod:
     required: false
     description: 'Specifies the path for the qmod'
   restore:
     required: false
     description: 'Whether restore should be called'
+    default: 'true'
   workflow_token:
     required: false
     description: 'Specifies the workflow Github Secret Token required for some functionality'
