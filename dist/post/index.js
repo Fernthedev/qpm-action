@@ -10761,11 +10761,12 @@ function wrappy (fn, cb) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.QPM_COMMAND_PUBLISH = exports.QPM_COMMAND_RESTORE = exports.QPM_REPOSITORY_NAME = exports.QPM_REPOSITORY_OWNER = void 0;
+exports.QPM_COMMAND_CACHE_PATH = exports.QPM_COMMAND_PUBLISH = exports.QPM_COMMAND_RESTORE = exports.QPM_REPOSITORY_NAME = exports.QPM_REPOSITORY_OWNER = void 0;
 exports.QPM_REPOSITORY_OWNER = 'RedBrumbler';
 exports.QPM_REPOSITORY_NAME = 'QuestPackageManager-Rust';
 exports.QPM_COMMAND_RESTORE = 'restore';
 exports.QPM_COMMAND_PUBLISH = 'publish';
+exports.QPM_COMMAND_CACHE_PATH = 'cache path';
 
 
 /***/ }),
@@ -11016,7 +11017,7 @@ function execAsync(command) {
 exports.execAsync = execAsync;
 function githubExecAsync(command) {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield (0, exec_1.exec)(command);
+        return yield (0, exec_1.getExecOutput)(command);
     });
 }
 exports.githubExecAsync = githubExecAsync;
