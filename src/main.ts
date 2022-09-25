@@ -1,14 +1,15 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import * as artifact from '@actions/artifact'
+import * as tc from '@actions/tool-cache'
 import * as cache from '@actions/cache'
 import * as io from '@actions/io'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as process from 'process'
-import * as zip from '@zip.js/zip.js'
+
 import {getQPM_RustExecutableName} from './api'
 import {
+  QPM_COMMAND_CACHE_PATH,
   QPM_COMMAND_RESTORE,
   QPM_REPOSITORY_NAME,
   QPM_REPOSITORY_OWNER
@@ -35,65 +36,37 @@ async function downloadQpm(
   if (artifactToDownload === undefined)
     throw new Error(`Unable to find artifact ${expectedArtifactName}`)
 
+  let cachedPath = tc.find('qpm-rust', artifactToDownload.id.toString())
+
+  if (fs.existsSync(cachedPath)) {
+    core.debug('Using existing qpm-rust tool cached')
+    core.addPath(cachedPath)
+    return path.join(cachedPath, 'qpm-rust')
+  }
   core.debug(`Downloading from ${artifactToDownload.archive_download_url}`)
-  const artifactDownload = await octokit.rest.actions.downloadArtifact({
+  const artifactDownload = await octokit.rest.actions.getArtifact({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
     artifact_id: artifactToDownload.id,
     archive_format: 'zip'
   })
 
-  const artifactZipData = artifactDownload.data as ArrayBuffer
-
-  core.debug(`Type of response download data: ${typeof artifactZipData}`)
-  core.debug(`Data: ${(artifactZipData as object).constructor.name}`)
-
-  const artifactZip = new zip.ZipReader(
-    new zip.Uint8ArrayReader(new Uint8Array(artifactZipData))
-  )
-
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
-  await io.mkdirP(extractDirectory)
 
-  core.debug('Unzipping')
-
-  let qpm_exec: string | undefined = undefined
-
-  // get all entries from the zip
-  for (const entry of await artifactZip.getEntries()) {
-    if (!entry.getData) continue
-    if (!(entry instanceof zip.fs.ZipFileEntry)) continue
-
-    core.debug(`Extracting ${entry.filename}`)
-
-    const data = await entry.getUint8Array()
-    // text contains the entry data as a String
-    const fileStream = fs.createWriteStream(
-      path.join(extractDirectory, entry.filename),
-      {
-        autoClose: true
-      }
-    )
-
-    core.debug(`Extracting ${entry.filename} to ${fileStream.path}`)
-
-    if (entry.filename.startsWith('qpm-rust')) {
-      qpm_exec = fileStream.path as string
-    }
-
-    fileStream.write(data)
-    fileStream.end()
-  }
-
-  // close the ZipReader
-  await artifactZip.close()
+  const qpmTool = await tc.downloadTool(artifactDownload.url)
+  const qpmToolExtract = await tc.extractZip(qpmTool)
+  cachedPath = await tc.cacheDir(
+    qpmToolExtract,
+    'qpm',
+    artifactToDownload.id.toString()
+  )
 
   // Add "$GITHUB_WORKSPACE/QPM/" to path
-  core.addPath(extractDirectory)
+  core.addPath(cachedPath)
   core.debug(`Added ${extractDirectory} to path`)
 
-  return qpm_exec
+  return path.join(cachedPath, 'qpm-rust')
 }
 
 async function run(): Promise<void> {
@@ -103,7 +76,14 @@ async function run(): Promise<void> {
     const octokit = github.getOctokit(token)
     const qpm_exec = await downloadQpm(octokit)
 
-    const paths = ['qpm.shared.json']
+    const cachePathOutput = (
+      await githubExecAsync(`${qpm_exec} ${QPM_COMMAND_CACHE_PATH}`)
+    ).stdout
+
+    // Config path is: E:\SSDUse\AppData\QPM_Temp
+    const cachePath = cachePathOutput.split('Config path is: ')[1]
+
+    const paths = [cachePath]
     const key = 'qpm-cache'
     const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
 

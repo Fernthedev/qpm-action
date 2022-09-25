@@ -1,5 +1,5 @@
 import {exec} from 'child_process'
-import {exec as githubExec} from '@actions/exec'
+import {getExecOutput as githubExec} from '@actions/exec'
 import * as core from '@actions/core'
 
 

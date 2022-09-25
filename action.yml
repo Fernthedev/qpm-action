@@ -27,6 +27,9 @@ inputs:
   qpm_qmod:
     required: false
     description: 'Specifies the path for the qmod'
+  restore:
+    required: false
+    description: 'Whether restore should be called'
 
   workflow_token:
     required: false

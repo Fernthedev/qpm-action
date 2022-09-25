@@ -27,3 +27,5 @@ jobs:
       - uses: ./
         with:
           workflow_token: ${{secrets.GITHUB_TOKEN}}
+          restore: false
+          cache: false
