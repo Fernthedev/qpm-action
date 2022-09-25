@@ -1,10 +1,15 @@
 name: 'build-test'
 on: # rebuild any PRs and main branch changes
   pull_request:
+    paths-ignore:
+      - '**.md'
   push:
     branches:
       - main
       - 'releases/*'
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
 
 jobs:
   build: # make sure build/ci work properly
@@ -21,4 +26,4 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./
         with:
-          milliseconds: 1000
+          workflow_token: ${{secrets.GITHUB_TOKEN}}

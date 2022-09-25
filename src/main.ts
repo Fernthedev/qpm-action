@@ -51,14 +51,11 @@ async function downloadQpm(
   })
 
   core.debug(`Type of response download data: ${typeof artifactZipData.data}`)
+  core.debug(`Data: ${(artifactZipData.data as object).constructor.name} ${JSON.stringify(artifactZipData.data)}`)
 
   const artifactZip = new zip.ZipReader(
     new zip.Uint8ArrayReader(artifactZipData.data as never)
   )
-
-  const zipfs = new zip.fs.FS()
-
-  zipfs.addDirectory('QPM')
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
