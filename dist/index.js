@@ -105,7 +105,6 @@ const tc = __importStar(__nccwpck_require__(7784));
 const cache = __importStar(__nccwpck_require__(7799));
 const fs = __importStar(__nccwpck_require__(5747));
 const path = __importStar(__nccwpck_require__(5622));
-const process = __importStar(__nccwpck_require__(1765));
 const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const utils_1 = __nccwpck_require__(918);
@@ -133,14 +132,18 @@ function downloadQpm(octokit, token) {
             artifact_id: artifactToDownload.id,
             archive_format: 'zip'
         });
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, 'QPM');
         const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url, undefined, `Bearer ${token}`);
         const qpmToolExtract = yield tc.extractZip(qpmTool);
         cachedPath = yield tc.cacheDir(qpmToolExtract, 'qpm', artifactToDownload.id.toString());
         // Add "$GITHUB_WORKSPACE/QPM/" to path
         core.addPath(cachedPath);
-        core.debug(`Added ${extractDirectory} to path`);
+        core.debug(`Added ${cachedPath} to path`);
+        yield core.group("cache files", () => __awaiter(this, void 0, void 0, function* () {
+            for (const file of fs.readdirSync(cachedPath)) {
+                core.debug(file);
+            }
+            return Promise.resolve();
+        }));
         return path.join(cachedPath, 'qpm-rust');
     });
 }
@@ -65931,14 +65934,6 @@ module.exports = require("os");
 
 "use strict";
 module.exports = require("path");
-
-/***/ }),
-
-/***/ 1765:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("process");
 
 /***/ }),
 

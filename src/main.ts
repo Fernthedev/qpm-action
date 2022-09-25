@@ -52,9 +52,6 @@ async function downloadQpm(
     archive_format: 'zip'
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
-
   const qpmTool = await tc.downloadTool(
     artifactDownload.data.archive_download_url,
     undefined,
@@ -69,7 +66,15 @@ async function downloadQpm(
 
   // Add "$GITHUB_WORKSPACE/QPM/" to path
   core.addPath(cachedPath)
-  core.debug(`Added ${extractDirectory} to path`)
+  core.debug(`Added ${cachedPath} to path`)
+
+  await core.group("cache files", async () => {
+    for (const file of fs.readdirSync(cachedPath)) {
+      core.debug(file)
+    }
+    return Promise.resolve()
+  })
+
 
   return path.join(cachedPath, 'qpm-rust')
 }
