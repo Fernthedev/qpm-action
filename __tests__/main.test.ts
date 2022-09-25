@@ -3,9 +3,7 @@
 // import * as path from 'path'
 import {expect, test} from '@jest/globals'
 
-test('throws invalid number', async () => {
-
-})
+test('throws invalid number', async () => {})
 
 // test('wait 500 ms', async () => {
 //   const start = new Date()

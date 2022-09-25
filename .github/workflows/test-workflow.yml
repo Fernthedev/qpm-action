@@ -1,4 +1,4 @@
-name: Test workflow 
+name: Test workflow
 
 on:
   push:
@@ -24,4 +24,4 @@ jobs:
         with:
           workflow_token: ${{secrets.GITHUB_TOKEN}}
         # with:
-          # milliseconds: 1000
+        # milliseconds: 1000
