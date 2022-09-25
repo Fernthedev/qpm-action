@@ -58,9 +58,7 @@ async function downloadQpm(
   )
 
   const artifactZip = new zip.ZipReader(
-    new zip.Uint8ArrayReader(artifactZipData.data as never), {
-      transferStreams: false
-    }
+    new zip.Uint8ArrayReader(artifactZipData.data as never)
   )
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
