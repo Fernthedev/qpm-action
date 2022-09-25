@@ -137,7 +137,9 @@ function downloadQpm(octokit) {
         });
         core.debug(`Type of response download data: ${typeof artifactZipData.data}`);
         core.debug(`Data: ${artifactZipData.data.constructor.name} ${JSON.stringify(artifactZipData.data)}`);
-        const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data));
+        const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data), {
+            transferStreams: false
+        });
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, 'QPM');
         yield io.mkdirP(extractDirectory);
