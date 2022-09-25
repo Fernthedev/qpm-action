@@ -58,9 +58,7 @@ async function downloadQpm(
 
   const zipfs = new zip.fs.FS()
 
-  zipfs.addDirectory("QPM")
-  
-  
+  zipfs.addDirectory('QPM')
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const extractDirectory = path.join(process.env.GITHUB_WORKSPACE!, 'QPM')
@@ -82,12 +80,12 @@ async function downloadQpm(
     const fileStream = fs.createWriteStream(
       path.join(extractDirectory, entry.filename),
       {
-        autoClose: true,
+        autoClose: true
       }
     )
 
     core.debug(`Extracting ${entry.filename} to ${fileStream.path}`)
-    
+
     fileStream.write(data)
     fileStream.end()
   }
