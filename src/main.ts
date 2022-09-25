@@ -43,6 +43,8 @@ async function downloadQpm(octokit: InstanceType<typeof GitHub>): Promise<void> 
     archive_format: "zip"
   })
 
+  core.debug(`Type of response download data: ${typeof(artifactZipData.data)}`)
+
   const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data as never))
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

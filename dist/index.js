@@ -136,6 +136,7 @@ function downloadQpm(octokit) {
             artifact_id: artifactToDownload.id,
             archive_format: "zip"
         });
+        core.debug(`Type of response download data: ${typeof (artifactZipData.data)}`);
         const artifactZip = new zip.ZipReader(new zip.Uint8ArrayReader(artifactZipData.data));
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const extractDirectory = path.join(process.env.GITHUB_WORKSPACE, "QPM");
