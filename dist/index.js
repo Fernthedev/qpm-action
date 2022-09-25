@@ -140,7 +140,7 @@ function downloadQpm(octokit, token) {
         core.debug(`Added ${cachedPath} to path`);
         yield core.group("cache files", () => __awaiter(this, void 0, void 0, function* () {
             for (const file of fs.readdirSync(cachedPath)) {
-                core.debug(file);
+                core.debug(`${file} ${fs.statSync(path.join(cachedPath, file)).isDirectory()}`);
             }
             return Promise.resolve();
         }));

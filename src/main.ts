@@ -70,7 +70,7 @@ async function downloadQpm(
 
   await core.group("cache files", async () => {
     for (const file of fs.readdirSync(cachedPath)) {
-      core.debug(file)
+      core.debug(`${file} ${fs.statSync(path.join(cachedPath, file)).isDirectory()}`)
     }
     return Promise.resolve()
   })
