@@ -102,7 +102,7 @@ const io = __importStar(__nccwpck_require__(7436));
 const fs = __importStar(__nccwpck_require__(5747));
 const path = __importStar(__nccwpck_require__(5622));
 const process = __importStar(__nccwpck_require__(1765));
-const zip = __importStar(__nccwpck_require__(3088));
+const zip = __importStar(__nccwpck_require__(4669));
 const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const qpmf_1 = __nccwpck_require__(3072);
@@ -5169,7 +5169,7 @@ exports.request = request;
 
 /***/ }),
 
-/***/ 3088:
+/***/ 4669:
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
 
 "use strict";
@@ -5265,2032 +5265,2026 @@ __nccwpck_require__.d(__webpack_exports__, {
 
 // Global
 
-const ZipDeflate = (() => {
+const MAX_BITS = 15;
+const D_CODES = 30;
+const BL_CODES = 19;
 
-	const MAX_BITS = 15;
-	const D_CODES = 30;
-	const BL_CODES = 19;
+const LENGTH_CODES = 29;
+const LITERALS = 256;
+const L_CODES = (LITERALS + 1 + LENGTH_CODES);
+const HEAP_SIZE = (2 * L_CODES + 1);
 
-	const LENGTH_CODES = 29;
-	const LITERALS = 256;
-	const L_CODES = (LITERALS + 1 + LENGTH_CODES);
-	const HEAP_SIZE = (2 * L_CODES + 1);
+const END_BLOCK = 256;
 
-	const END_BLOCK = 256;
+// Bit length codes must not exceed MAX_BL_BITS bits
+const MAX_BL_BITS = 7;
 
-	// Bit length codes must not exceed MAX_BL_BITS bits
-	const MAX_BL_BITS = 7;
+// repeat previous bit length 3-6 times (2 bits of repeat count)
+const REP_3_6 = 16;
 
-	// repeat previous bit length 3-6 times (2 bits of repeat count)
-	const REP_3_6 = 16;
+// repeat a zero length 3-10 times (3 bits of repeat count)
+const REPZ_3_10 = 17;
 
-	// repeat a zero length 3-10 times (3 bits of repeat count)
-	const REPZ_3_10 = 17;
+// repeat a zero length 11-138 times (7 bits of repeat count)
+const REPZ_11_138 = 18;
 
-	// repeat a zero length 11-138 times (7 bits of repeat count)
-	const REPZ_11_138 = 18;
+// The lengths of the bit length codes are sent in order of decreasing
+// probability, to avoid transmitting the lengths for unused bit
+// length codes.
 
-	// The lengths of the bit length codes are sent in order of decreasing
-	// probability, to avoid transmitting the lengths for unused bit
-	// length codes.
+const Buf_size = 8 * 2;
 
-	const Buf_size = 8 * 2;
+// JZlib version : "1.0.2"
+const Z_DEFAULT_COMPRESSION = -1;
 
-	// JZlib version : "1.0.2"
-	const Z_DEFAULT_COMPRESSION = -1;
+// compression strategy
+const Z_FILTERED = 1;
+const Z_HUFFMAN_ONLY = 2;
+const Z_DEFAULT_STRATEGY = 0;
 
-	// compression strategy
-	const Z_FILTERED = 1;
-	const Z_HUFFMAN_ONLY = 2;
-	const Z_DEFAULT_STRATEGY = 0;
+const Z_NO_FLUSH = 0;
+const Z_PARTIAL_FLUSH = 1;
+const Z_FULL_FLUSH = 3;
+const Z_FINISH = 4;
 
-	const Z_NO_FLUSH = 0;
-	const Z_PARTIAL_FLUSH = 1;
-	const Z_FULL_FLUSH = 3;
-	const Z_FINISH = 4;
+const Z_OK = 0;
+const Z_STREAM_END = 1;
+const Z_NEED_DICT = 2;
+const Z_STREAM_ERROR = -2;
+const Z_DATA_ERROR = -3;
+const Z_BUF_ERROR = -5;
 
-	const Z_OK = 0;
-	const Z_STREAM_END = 1;
-	const Z_NEED_DICT = 2;
-	const Z_STREAM_ERROR = -2;
-	const Z_DATA_ERROR = -3;
-	const Z_BUF_ERROR = -5;
+// Tree
 
-	// Tree
+function extractArray(array) {
+	return flatArray(array.map(([length, value]) => (new Array(length)).fill(value, 0, length)));
+}
 
-	function extractArray(array) {
-		return flatArray(array.map(([length, value]) => (new Array(length)).fill(value, 0, length)));
-	}
+function flatArray(array) {
+	return array.reduce((a, b) => a.concat(Array.isArray(b) ? flatArray(b) : b), []);
+}
 
-	function flatArray(array) {
-		return array.reduce((a, b) => a.concat(Array.isArray(b) ? flatArray(b) : b), []);
-	}
+// see definition of array dist_code below
+const _dist_code = [0, 1, 2, 3].concat(...extractArray([
+	[2, 4], [2, 5], [4, 6], [4, 7], [8, 8], [8, 9], [16, 10], [16, 11], [32, 12], [32, 13], [64, 14], [64, 15], [2, 0], [1, 16],
+	[1, 17], [2, 18], [2, 19], [4, 20], [4, 21], [8, 22], [8, 23], [16, 24], [16, 25], [32, 26], [32, 27], [64, 28], [64, 29]
+]));
 
-	// see definition of array dist_code below
-	const _dist_code = [0, 1, 2, 3].concat(...extractArray([
-		[2, 4], [2, 5], [4, 6], [4, 7], [8, 8], [8, 9], [16, 10], [16, 11], [32, 12], [32, 13], [64, 14], [64, 15], [2, 0], [1, 16],
-		[1, 17], [2, 18], [2, 19], [4, 20], [4, 21], [8, 22], [8, 23], [16, 24], [16, 25], [32, 26], [32, 27], [64, 28], [64, 29]
-	]));
+function Tree() {
+	const that = this;
 
-	function Tree() {
-		const that = this;
+	// dyn_tree; // the dynamic tree
+	// max_code; // largest code with non zero frequency
+	// stat_desc; // the corresponding static tree
 
-		// dyn_tree; // the dynamic tree
-		// max_code; // largest code with non zero frequency
-		// stat_desc; // the corresponding static tree
+	// Compute the optimal bit lengths for a tree and update the total bit
+	// length
+	// for the current block.
+	// IN assertion: the fields freq and dad are set, heap[heap_max] and
+	// above are the tree nodes sorted by increasing frequency.
+	// OUT assertions: the field len is set to the optimal bit length, the
+	// array bl_count contains the frequencies for each bit length.
+	// The length opt_len is updated; static_len is also updated if stree is
+	// not null.
+	function gen_bitlen(s) {
+		const tree = that.dyn_tree;
+		const stree = that.stat_desc.static_tree;
+		const extra = that.stat_desc.extra_bits;
+		const base = that.stat_desc.extra_base;
+		const max_length = that.stat_desc.max_length;
+		let h; // heap index
+		let n, m; // iterate over the tree elements
+		let bits; // bit length
+		let xbits; // extra bits
+		let f; // frequency
+		let overflow = 0; // number of elements with bit length too large
 
-		// Compute the optimal bit lengths for a tree and update the total bit
-		// length
-		// for the current block.
-		// IN assertion: the fields freq and dad are set, heap[heap_max] and
-		// above are the tree nodes sorted by increasing frequency.
-		// OUT assertions: the field len is set to the optimal bit length, the
-		// array bl_count contains the frequencies for each bit length.
-		// The length opt_len is updated; static_len is also updated if stree is
-		// not null.
-		function gen_bitlen(s) {
-			const tree = that.dyn_tree;
-			const stree = that.stat_desc.static_tree;
-			const extra = that.stat_desc.extra_bits;
-			const base = that.stat_desc.extra_base;
-			const max_length = that.stat_desc.max_length;
-			let h; // heap index
-			let n, m; // iterate over the tree elements
-			let bits; // bit length
-			let xbits; // extra bits
-			let f; // frequency
-			let overflow = 0; // number of elements with bit length too large
+		for (bits = 0; bits <= MAX_BITS; bits++)
+			s.bl_count[bits] = 0;
 
-			for (bits = 0; bits <= MAX_BITS; bits++)
-				s.bl_count[bits] = 0;
+		// In a first pass, compute the optimal bit lengths (which may
+		// overflow in the case of the bit length tree).
+		tree[s.heap[s.heap_max] * 2 + 1] = 0; // root of the heap
 
-			// In a first pass, compute the optimal bit lengths (which may
-			// overflow in the case of the bit length tree).
-			tree[s.heap[s.heap_max] * 2 + 1] = 0; // root of the heap
-
-			for (h = s.heap_max + 1; h < HEAP_SIZE; h++) {
-				n = s.heap[h];
-				bits = tree[tree[n * 2 + 1] * 2 + 1] + 1;
-				if (bits > max_length) {
-					bits = max_length;
-					overflow++;
-				}
-				tree[n * 2 + 1] = bits;
-				// We overwrite tree[n*2+1] which is no longer needed
-
-				if (n > that.max_code)
-					continue; // not a leaf node
-
-				s.bl_count[bits]++;
-				xbits = 0;
-				if (n >= base)
-					xbits = extra[n - base];
-				f = tree[n * 2];
-				s.opt_len += f * (bits + xbits);
-				if (stree)
-					s.static_len += f * (stree[n * 2 + 1] + xbits);
+		for (h = s.heap_max + 1; h < HEAP_SIZE; h++) {
+			n = s.heap[h];
+			bits = tree[tree[n * 2 + 1] * 2 + 1] + 1;
+			if (bits > max_length) {
+				bits = max_length;
+				overflow++;
 			}
-			if (overflow === 0)
-				return;
+			tree[n * 2 + 1] = bits;
+			// We overwrite tree[n*2+1] which is no longer needed
 
-			// This happens for example on obj2 and pic of the Calgary corpus
-			// Find the first bit length which could increase:
-			do {
-				bits = max_length - 1;
-				while (s.bl_count[bits] === 0)
-					bits--;
-				s.bl_count[bits]--; // move one leaf down the tree
-				s.bl_count[bits + 1] += 2; // move one overflow item as its brother
-				s.bl_count[max_length]--;
-				// The brother of the overflow item also moves one step up,
-				// but this does not affect bl_count[max_length]
-				overflow -= 2;
-			} while (overflow > 0);
+			if (n > that.max_code)
+				continue; // not a leaf node
 
-			for (bits = max_length; bits !== 0; bits--) {
-				n = s.bl_count[bits];
-				while (n !== 0) {
-					m = s.heap[--h];
-					if (m > that.max_code)
-						continue;
-					if (tree[m * 2 + 1] != bits) {
-						s.opt_len += (bits - tree[m * 2 + 1]) * tree[m * 2];
-						tree[m * 2 + 1] = bits;
-					}
-					n--;
-				}
-			}
+			s.bl_count[bits]++;
+			xbits = 0;
+			if (n >= base)
+				xbits = extra[n - base];
+			f = tree[n * 2];
+			s.opt_len += f * (bits + xbits);
+			if (stree)
+				s.static_len += f * (stree[n * 2 + 1] + xbits);
 		}
+		if (overflow === 0)
+			return;
 
-		// Reverse the first len bits of a code, using straightforward code (a
-		// faster
-		// method would use a table)
-		// IN assertion: 1 <= len <= 15
-		function bi_reverse(code, // the value to invert
-			len // its bit length
-		) {
-			let res = 0;
-			do {
-				res |= code & 1;
-				code >>>= 1;
-				res <<= 1;
-			} while (--len > 0);
-			return res >>> 1;
-		}
+		// This happens for example on obj2 and pic of the Calgary corpus
+		// Find the first bit length which could increase:
+		do {
+			bits = max_length - 1;
+			while (s.bl_count[bits] === 0)
+				bits--;
+			s.bl_count[bits]--; // move one leaf down the tree
+			s.bl_count[bits + 1] += 2; // move one overflow item as its brother
+			s.bl_count[max_length]--;
+			// The brother of the overflow item also moves one step up,
+			// but this does not affect bl_count[max_length]
+			overflow -= 2;
+		} while (overflow > 0);
 
-		// Generate the codes for a given tree and bit counts (which need not be
-		// optimal).
-		// IN assertion: the array bl_count contains the bit length statistics for
-		// the given tree and the field len is set for all tree elements.
-		// OUT assertion: the field code is set for all tree elements of non
-		// zero code length.
-		function gen_codes(tree, // the tree to decorate
-			max_code, // largest code with non zero frequency
-			bl_count // number of codes at each bit length
-		) {
-			const next_code = []; // next code value for each
-			// bit length
-			let code = 0; // running code value
-			let bits; // bit index
-			let n; // code index
-			let len;
-
-			// The distribution counts are first used to generate the code values
-			// without bit reversal.
-			for (bits = 1; bits <= MAX_BITS; bits++) {
-				next_code[bits] = code = ((code + bl_count[bits - 1]) << 1);
-			}
-
-			// Check that the bit counts in bl_count are consistent. The last code
-			// must be all ones.
-			// Assert (code + bl_count[MAX_BITS]-1 == (1<<MAX_BITS)-1,
-			// "inconsistent bit counts");
-			// Tracev((stderr,"gen_codes: max_code %d ", max_code));
-
-			for (n = 0; n <= max_code; n++) {
-				len = tree[n * 2 + 1];
-				if (len === 0)
+		for (bits = max_length; bits !== 0; bits--) {
+			n = s.bl_count[bits];
+			while (n !== 0) {
+				m = s.heap[--h];
+				if (m > that.max_code)
 					continue;
-				// Now reverse the bits
-				tree[n * 2] = bi_reverse(next_code[len]++, len);
+				if (tree[m * 2 + 1] != bits) {
+					s.opt_len += (bits - tree[m * 2 + 1]) * tree[m * 2];
+					tree[m * 2 + 1] = bits;
+				}
+				n--;
+			}
+		}
+	}
+
+	// Reverse the first len bits of a code, using straightforward code (a
+	// faster
+	// method would use a table)
+	// IN assertion: 1 <= len <= 15
+	function bi_reverse(code, // the value to invert
+		len // its bit length
+	) {
+		let res = 0;
+		do {
+			res |= code & 1;
+			code >>>= 1;
+			res <<= 1;
+		} while (--len > 0);
+		return res >>> 1;
+	}
+
+	// Generate the codes for a given tree and bit counts (which need not be
+	// optimal).
+	// IN assertion: the array bl_count contains the bit length statistics for
+	// the given tree and the field len is set for all tree elements.
+	// OUT assertion: the field code is set for all tree elements of non
+	// zero code length.
+	function gen_codes(tree, // the tree to decorate
+		max_code, // largest code with non zero frequency
+		bl_count // number of codes at each bit length
+	) {
+		const next_code = []; // next code value for each
+		// bit length
+		let code = 0; // running code value
+		let bits; // bit index
+		let n; // code index
+		let len;
+
+		// The distribution counts are first used to generate the code values
+		// without bit reversal.
+		for (bits = 1; bits <= MAX_BITS; bits++) {
+			next_code[bits] = code = ((code + bl_count[bits - 1]) << 1);
+		}
+
+		// Check that the bit counts in bl_count are consistent. The last code
+		// must be all ones.
+		// Assert (code + bl_count[MAX_BITS]-1 == (1<<MAX_BITS)-1,
+		// "inconsistent bit counts");
+		// Tracev((stderr,"gen_codes: max_code %d ", max_code));
+
+		for (n = 0; n <= max_code; n++) {
+			len = tree[n * 2 + 1];
+			if (len === 0)
+				continue;
+			// Now reverse the bits
+			tree[n * 2] = bi_reverse(next_code[len]++, len);
+		}
+	}
+
+	// Construct one Huffman tree and assigns the code bit strings and lengths.
+	// Update the total bit length for the current block.
+	// IN assertion: the field freq is set for all tree elements.
+	// OUT assertions: the fields len and code are set to the optimal bit length
+	// and corresponding code. The length opt_len is updated; static_len is
+	// also updated if stree is not null. The field max_code is set.
+	that.build_tree = function (s) {
+		const tree = that.dyn_tree;
+		const stree = that.stat_desc.static_tree;
+		const elems = that.stat_desc.elems;
+		let n, m; // iterate over heap elements
+		let max_code = -1; // largest code with non zero frequency
+		let node; // new node being created
+
+		// Construct the initial heap, with least frequent element in
+		// heap[1]. The sons of heap[n] are heap[2*n] and heap[2*n+1].
+		// heap[0] is not used.
+		s.heap_len = 0;
+		s.heap_max = HEAP_SIZE;
+
+		for (n = 0; n < elems; n++) {
+			if (tree[n * 2] !== 0) {
+				s.heap[++s.heap_len] = max_code = n;
+				s.depth[n] = 0;
+			} else {
+				tree[n * 2 + 1] = 0;
 			}
 		}
 
-		// Construct one Huffman tree and assigns the code bit strings and lengths.
-		// Update the total bit length for the current block.
-		// IN assertion: the field freq is set for all tree elements.
-		// OUT assertions: the fields len and code are set to the optimal bit length
-		// and corresponding code. The length opt_len is updated; static_len is
-		// also updated if stree is not null. The field max_code is set.
-		that.build_tree = function (s) {
-			const tree = that.dyn_tree;
-			const stree = that.stat_desc.static_tree;
-			const elems = that.stat_desc.elems;
-			let n, m; // iterate over heap elements
-			let max_code = -1; // largest code with non zero frequency
-			let node; // new node being created
+		// The pkzip format requires that at least one distance code exists,
+		// and that at least one bit should be sent even if there is only one
+		// possible code. So to avoid special checks later on we force at least
+		// two codes of non zero frequency.
+		while (s.heap_len < 2) {
+			node = s.heap[++s.heap_len] = max_code < 2 ? ++max_code : 0;
+			tree[node * 2] = 1;
+			s.depth[node] = 0;
+			s.opt_len--;
+			if (stree)
+				s.static_len -= stree[node * 2 + 1];
+			// node is 0 or 1 so it does not have extra bits
+		}
+		that.max_code = max_code;
 
-			// Construct the initial heap, with least frequent element in
-			// heap[1]. The sons of heap[n] are heap[2*n] and heap[2*n+1].
-			// heap[0] is not used.
-			s.heap_len = 0;
-			s.heap_max = HEAP_SIZE;
+		// The elements heap[heap_len/2+1 .. heap_len] are leaves of the tree,
+		// establish sub-heaps of increasing lengths:
 
-			for (n = 0; n < elems; n++) {
-				if (tree[n * 2] !== 0) {
-					s.heap[++s.heap_len] = max_code = n;
-					s.depth[n] = 0;
-				} else {
-					tree[n * 2 + 1] = 0;
-				}
-			}
+		for (n = Math.floor(s.heap_len / 2); n >= 1; n--)
+			s.pqdownheap(tree, n);
 
-			// The pkzip format requires that at least one distance code exists,
-			// and that at least one bit should be sent even if there is only one
-			// possible code. So to avoid special checks later on we force at least
-			// two codes of non zero frequency.
-			while (s.heap_len < 2) {
-				node = s.heap[++s.heap_len] = max_code < 2 ? ++max_code : 0;
-				tree[node * 2] = 1;
-				s.depth[node] = 0;
-				s.opt_len--;
-				if (stree)
-					s.static_len -= stree[node * 2 + 1];
-				// node is 0 or 1 so it does not have extra bits
-			}
-			that.max_code = max_code;
+		// Construct the Huffman tree by repeatedly combining the least two
+		// frequent nodes.
 
-			// The elements heap[heap_len/2+1 .. heap_len] are leaves of the tree,
-			// establish sub-heaps of increasing lengths:
+		node = elems; // next internal node of the tree
+		do {
+			// n = node of least frequency
+			n = s.heap[1];
+			s.heap[1] = s.heap[s.heap_len--];
+			s.pqdownheap(tree, 1);
+			m = s.heap[1]; // m = node of next least frequency
 
-			for (n = Math.floor(s.heap_len / 2); n >= 1; n--)
-				s.pqdownheap(tree, n);
+			s.heap[--s.heap_max] = n; // keep the nodes sorted by frequency
+			s.heap[--s.heap_max] = m;
 
-			// Construct the Huffman tree by repeatedly combining the least two
-			// frequent nodes.
+			// Create a new node father of n and m
+			tree[node * 2] = (tree[n * 2] + tree[m * 2]);
+			s.depth[node] = Math.max(s.depth[n], s.depth[m]) + 1;
+			tree[n * 2 + 1] = tree[m * 2 + 1] = node;
 
-			node = elems; // next internal node of the tree
-			do {
-				// n = node of least frequency
-				n = s.heap[1];
-				s.heap[1] = s.heap[s.heap_len--];
-				s.pqdownheap(tree, 1);
-				m = s.heap[1]; // m = node of next least frequency
+			// and insert the new node in the heap
+			s.heap[1] = node++;
+			s.pqdownheap(tree, 1);
+		} while (s.heap_len >= 2);
 
-				s.heap[--s.heap_max] = n; // keep the nodes sorted by frequency
-				s.heap[--s.heap_max] = m;
+		s.heap[--s.heap_max] = s.heap[1];
 
-				// Create a new node father of n and m
-				tree[node * 2] = (tree[n * 2] + tree[m * 2]);
-				s.depth[node] = Math.max(s.depth[n], s.depth[m]) + 1;
-				tree[n * 2 + 1] = tree[m * 2 + 1] = node;
+		// At this point, the fields freq and dad are set. We can now
+		// generate the bit lengths.
 
-				// and insert the new node in the heap
-				s.heap[1] = node++;
-				s.pqdownheap(tree, 1);
-			} while (s.heap_len >= 2);
+		gen_bitlen(s);
 
-			s.heap[--s.heap_max] = s.heap[1];
-
-			// At this point, the fields freq and dad are set. We can now
-			// generate the bit lengths.
-
-			gen_bitlen(s);
-
-			// The field len is now set, we can generate the bit codes
-			gen_codes(tree, that.max_code, s.bl_count);
-		};
-
-	}
-
-	Tree._length_code = [0, 1, 2, 3, 4, 5, 6, 7].concat(...extractArray([
-		[2, 8], [2, 9], [2, 10], [2, 11], [4, 12], [4, 13], [4, 14], [4, 15], [8, 16], [8, 17], [8, 18], [8, 19],
-		[16, 20], [16, 21], [16, 22], [16, 23], [32, 24], [32, 25], [32, 26], [31, 27], [1, 28]]));
-
-	Tree.base_length = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 0];
-
-	Tree.base_dist = [0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384,
-		24576];
-
-	// Mapping from a distance to a distance code. dist is the distance - 1 and
-	// must not have side effects. _dist_code[256] and _dist_code[257] are never
-	// used.
-	Tree.d_code = function (dist) {
-		return ((dist) < 256 ? _dist_code[dist] : _dist_code[256 + ((dist) >>> 7)]);
+		// The field len is now set, we can generate the bit codes
+		gen_codes(tree, that.max_code, s.bl_count);
 	};
 
-	// extra bits for each length code
-	Tree.extra_lbits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+}
 
-	// extra bits for each distance code
-	Tree.extra_dbits = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+Tree._length_code = [0, 1, 2, 3, 4, 5, 6, 7].concat(...extractArray([
+	[2, 8], [2, 9], [2, 10], [2, 11], [4, 12], [4, 13], [4, 14], [4, 15], [8, 16], [8, 17], [8, 18], [8, 19],
+	[16, 20], [16, 21], [16, 22], [16, 23], [32, 24], [32, 25], [32, 26], [31, 27], [1, 28]]));
 
-	// extra bits for each bit length code
-	Tree.extra_blbits = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 7];
+Tree.base_length = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 0];
 
-	Tree.bl_order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+Tree.base_dist = [0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384,
+	24576];
 
-	// StaticTree
+// Mapping from a distance to a distance code. dist is the distance - 1 and
+// must not have side effects. _dist_code[256] and _dist_code[257] are never
+// used.
+Tree.d_code = function (dist) {
+	return ((dist) < 256 ? _dist_code[dist] : _dist_code[256 + ((dist) >>> 7)]);
+};
 
-	function StaticTree(static_tree, extra_bits, extra_base, elems, max_length) {
-		const that = this;
-		that.static_tree = static_tree;
-		that.extra_bits = extra_bits;
-		that.extra_base = extra_base;
-		that.elems = elems;
-		that.max_length = max_length;
+// extra bits for each length code
+Tree.extra_lbits = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+
+// extra bits for each distance code
+Tree.extra_dbits = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+
+// extra bits for each bit length code
+Tree.extra_blbits = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 7];
+
+Tree.bl_order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+// StaticTree
+
+function StaticTree(static_tree, extra_bits, extra_base, elems, max_length) {
+	const that = this;
+	that.static_tree = static_tree;
+	that.extra_bits = extra_bits;
+	that.extra_base = extra_base;
+	that.elems = elems;
+	that.max_length = max_length;
+}
+
+const static_ltree2_first_part = [12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82,
+	210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86,
+	214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81,
+	209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85,
+	213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 19, 275, 147, 403, 83, 339, 211, 467, 51, 307,
+	179, 435, 115, 371, 243, 499, 11, 267, 139, 395, 75, 331, 203, 459, 43, 299, 171, 427, 107, 363, 235, 491, 27, 283, 155, 411, 91, 347, 219, 475,
+	59, 315, 187, 443, 123, 379, 251, 507, 7, 263, 135, 391, 71, 327, 199, 455, 39, 295, 167, 423, 103, 359, 231, 487, 23, 279, 151, 407, 87, 343, 215,
+	471, 55, 311, 183, 439, 119, 375, 247, 503, 15, 271, 143, 399, 79, 335, 207, 463, 47, 303, 175, 431, 111, 367, 239, 495, 31, 287, 159, 415, 95,
+	351, 223, 479, 63, 319, 191, 447, 127, 383, 255, 511, 0, 64, 32, 96, 16, 80, 48, 112, 8, 72, 40, 104, 24, 88, 56, 120, 4, 68, 36, 100, 20, 84, 52,
+	116, 3, 131, 67, 195, 35, 163, 99, 227];
+const static_ltree2_second_part = extractArray([[144, 8], [112, 9], [24, 7], [8, 8]]);
+StaticTree.static_ltree = flatArray(static_ltree2_first_part.map((value, index) => [value, static_ltree2_second_part[index]]));
+
+const static_dtree_first_part = [0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 14, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 27, 7, 23];
+const static_dtree_second_part = extractArray([[30, 5]]);
+StaticTree.static_dtree = flatArray(static_dtree_first_part.map((value, index) => [value, static_dtree_second_part[index]]));
+
+StaticTree.static_l_desc = new StaticTree(StaticTree.static_ltree, Tree.extra_lbits, LITERALS + 1, L_CODES, MAX_BITS);
+
+StaticTree.static_d_desc = new StaticTree(StaticTree.static_dtree, Tree.extra_dbits, 0, D_CODES, MAX_BITS);
+
+StaticTree.static_bl_desc = new StaticTree(null, Tree.extra_blbits, 0, BL_CODES, MAX_BL_BITS);
+
+// Deflate
+
+const MAX_MEM_LEVEL = 9;
+const DEF_MEM_LEVEL = 8;
+
+function Config(good_length, max_lazy, nice_length, max_chain, func) {
+	const that = this;
+	that.good_length = good_length;
+	that.max_lazy = max_lazy;
+	that.nice_length = nice_length;
+	that.max_chain = max_chain;
+	that.func = func;
+}
+
+const STORED = 0;
+const FAST = 1;
+const SLOW = 2;
+const config_table = [
+	new Config(0, 0, 0, 0, STORED),
+	new Config(4, 4, 8, 4, FAST),
+	new Config(4, 5, 16, 8, FAST),
+	new Config(4, 6, 32, 32, FAST),
+	new Config(4, 4, 16, 16, SLOW),
+	new Config(8, 16, 32, 32, SLOW),
+	new Config(8, 16, 128, 128, SLOW),
+	new Config(8, 32, 128, 256, SLOW),
+	new Config(32, 128, 258, 1024, SLOW),
+	new Config(32, 258, 258, 4096, SLOW)
+];
+
+const z_errmsg = ["need dictionary", // Z_NEED_DICT
+	// 2
+	"stream end", // Z_STREAM_END 1
+	"", // Z_OK 0
+	"", // Z_ERRNO (-1)
+	"stream error", // Z_STREAM_ERROR (-2)
+	"data error", // Z_DATA_ERROR (-3)
+	"", // Z_MEM_ERROR (-4)
+	"buffer error", // Z_BUF_ERROR (-5)
+	"",// Z_VERSION_ERROR (-6)
+	""];
+
+// block not completed, need more input or more output
+const NeedMore = 0;
+
+// block flush performed
+const BlockDone = 1;
+
+// finish started, need only more output at next deflate
+const FinishStarted = 2;
+
+// finish done, accept no more input or output
+const FinishDone = 3;
+
+// preset dictionary flag in zlib header
+const PRESET_DICT = 0x20;
+
+const INIT_STATE = 42;
+const BUSY_STATE = 113;
+const FINISH_STATE = 666;
+
+// The deflate compression method
+const Z_DEFLATED = 8;
+
+const STORED_BLOCK = 0;
+const STATIC_TREES = 1;
+const DYN_TREES = 2;
+
+const MIN_MATCH = 3;
+const MAX_MATCH = 258;
+const MIN_LOOKAHEAD = (MAX_MATCH + MIN_MATCH + 1);
+
+function smaller(tree, n, m, depth) {
+	const tn2 = tree[n * 2];
+	const tm2 = tree[m * 2];
+	return (tn2 < tm2 || (tn2 == tm2 && depth[n] <= depth[m]));
+}
+
+function Deflate() {
+
+	const that = this;
+	let strm; // pointer back to this zlib stream
+	let status; // as the name implies
+	// pending_buf; // output still pending
+	let pending_buf_size; // size of pending_buf
+	// pending_out; // next pending byte to output to the stream
+	// pending; // nb of bytes in the pending buffer
+
+	// dist_buf; // buffer for distances
+	// lc_buf; // buffer for literals or lengths
+	// To simplify the code, dist_buf and lc_buf have the same number of elements.
+	// To use different lengths, an extra flag array would be necessary.
+
+	let last_flush; // value of flush param for previous deflate call
+
+	let w_size; // LZ77 win size (32K by default)
+	let w_bits; // log2(w_size) (8..16)
+	let w_mask; // w_size - 1
+
+	let win;
+	// Sliding win. Input bytes are read into the second half of the win,
+	// and move to the first half later to keep a dictionary of at least wSize
+	// bytes. With this organization, matches are limited to a distance of
+	// wSize-MAX_MATCH bytes, but this ensures that IO is always
+	// performed with a length multiple of the block size. Also, it limits
+	// the win size to 64K, which is quite useful on MSDOS.
+	// To do: use the user input buffer as sliding win.
+
+	let window_size;
+	// Actual size of win: 2*wSize, except when the user input buffer
+	// is directly used as sliding win.
+
+	let prev;
+	// Link to older string with same hash index. To limit the size of this
+	// array to 64K, this link is maintained only for the last 32K strings.
+	// An index in this array is thus a win index modulo 32K.
+
+	let head; // Heads of the hash chains or NIL.
+
+	let ins_h; // hash index of string to be inserted
+	let hash_size; // number of elements in hash table
+	let hash_bits; // log2(hash_size)
+	let hash_mask; // hash_size-1
+
+	// Number of bits by which ins_h must be shifted at each input
+	// step. It must be such that after MIN_MATCH steps, the oldest
+	// byte no longer takes part in the hash key, that is:
+	// hash_shift * MIN_MATCH >= hash_bits
+	let hash_shift;
+
+	// Window position at the beginning of the current output block. Gets
+	// negative when the win is moved backwards.
+
+	let block_start;
+
+	let match_length; // length of best match
+	let prev_match; // previous match
+	let match_available; // set if previous match exists
+	let strstart; // start of string to insert
+	let match_start; // start of matching string
+	let lookahead; // number of valid bytes ahead in win
+
+	// Length of the best match at previous step. Matches not greater than this
+	// are discarded. This is used in the lazy match evaluation.
+	let prev_length;
+
+	// To speed up deflation, hash chains are never searched beyond this
+	// length. A higher limit improves compression ratio but degrades the speed.
+	let max_chain_length;
+
+	// Attempt to find a better match only when the current match is strictly
+	// smaller than this value. This mechanism is used only for compression
+	// levels >= 4.
+	let max_lazy_match;
+
+	// Insert new strings in the hash table only if the match length is not
+	// greater than this length. This saves time but degrades compression.
+	// max_insert_length is used only for compression levels <= 3.
+
+	let level; // compression level (1..9)
+	let strategy; // favor or force Huffman coding
+
+	// Use a faster search when the previous match is longer than this
+	let good_match;
+
+	// Stop searching when current match exceeds this
+	let nice_match;
+
+	let dyn_ltree; // literal and length tree
+	let dyn_dtree; // distance tree
+	let bl_tree; // Huffman tree for bit lengths
+
+	const l_desc = new Tree(); // desc for literal tree
+	const d_desc = new Tree(); // desc for distance tree
+	const bl_desc = new Tree(); // desc for bit length tree
+
+	// that.heap_len; // number of elements in the heap
+	// that.heap_max; // element of largest frequency
+	// The sons of heap[n] are heap[2*n] and heap[2*n+1]. heap[0] is not used.
+	// The same heap array is used to build all trees.
+
+	// Depth of each subtree used as tie breaker for trees of equal frequency
+	that.depth = [];
+
+	// Size of match buffer for literals/lengths. There are 4 reasons for
+	// limiting lit_bufsize to 64K:
+	// - frequencies can be kept in 16 bit counters
+	// - if compression is not successful for the first block, all input
+	// data is still in the win so we can still emit a stored block even
+	// when input comes from standard input. (This can also be done for
+	// all blocks if lit_bufsize is not greater than 32K.)
+	// - if compression is not successful for a file smaller than 64K, we can
+	// even emit a stored file instead of a stored block (saving 5 bytes).
+	// This is applicable only for zip (not gzip or zlib).
+	// - creating new Huffman trees less frequently may not provide fast
+	// adaptation to changes in the input data statistics. (Take for
+	// example a binary file with poorly compressible code followed by
+	// a highly compressible string table.) Smaller buffer sizes give
+	// fast adaptation but have of course the overhead of transmitting
+	// trees more frequently.
+	// - I can't count above 4
+	let lit_bufsize;
+
+	let last_lit; // running index in dist_buf and lc_buf
+
+	// that.opt_len; // bit length of current block with optimal trees
+	// that.static_len; // bit length of current block with static trees
+	let matches; // number of string matches in current block
+	let last_eob_len; // bit length of EOB code for last block
+
+	// Output buffer. bits are inserted starting at the bottom (least
+	// significant bits).
+	let bi_buf;
+
+	// Number of valid bits in bi_buf. All bits above the last valid bit
+	// are always zero.
+	let bi_valid;
+
+	// number of codes at each bit length for an optimal tree
+	that.bl_count = [];
+
+	// heap used to build the Huffman trees
+	that.heap = [];
+
+	dyn_ltree = [];
+	dyn_dtree = [];
+	bl_tree = [];
+
+	function lm_init() {
+		window_size = 2 * w_size;
+
+		head[hash_size - 1] = 0;
+		for (let i = 0; i < hash_size - 1; i++) {
+			head[i] = 0;
+		}
+
+		// Set the default configuration parameters:
+		max_lazy_match = config_table[level].max_lazy;
+		good_match = config_table[level].good_length;
+		nice_match = config_table[level].nice_length;
+		max_chain_length = config_table[level].max_chain;
+
+		strstart = 0;
+		block_start = 0;
+		lookahead = 0;
+		match_length = prev_length = MIN_MATCH - 1;
+		match_available = 0;
+		ins_h = 0;
 	}
 
-	const static_ltree2_first_part = [12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82,
-		210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86,
-		214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81,
-		209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85,
-		213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 19, 275, 147, 403, 83, 339, 211, 467, 51, 307,
-		179, 435, 115, 371, 243, 499, 11, 267, 139, 395, 75, 331, 203, 459, 43, 299, 171, 427, 107, 363, 235, 491, 27, 283, 155, 411, 91, 347, 219, 475,
-		59, 315, 187, 443, 123, 379, 251, 507, 7, 263, 135, 391, 71, 327, 199, 455, 39, 295, 167, 423, 103, 359, 231, 487, 23, 279, 151, 407, 87, 343, 215,
-		471, 55, 311, 183, 439, 119, 375, 247, 503, 15, 271, 143, 399, 79, 335, 207, 463, 47, 303, 175, 431, 111, 367, 239, 495, 31, 287, 159, 415, 95,
-		351, 223, 479, 63, 319, 191, 447, 127, 383, 255, 511, 0, 64, 32, 96, 16, 80, 48, 112, 8, 72, 40, 104, 24, 88, 56, 120, 4, 68, 36, 100, 20, 84, 52,
-		116, 3, 131, 67, 195, 35, 163, 99, 227];
-	const static_ltree2_second_part = extractArray([[144, 8], [112, 9], [24, 7], [8, 8]]);
-	StaticTree.static_ltree = flatArray(static_ltree2_first_part.map((value, index) => [value, static_ltree2_second_part[index]]));
+	function init_block() {
+		let i;
+		// Initialize the trees.
+		for (i = 0; i < L_CODES; i++)
+			dyn_ltree[i * 2] = 0;
+		for (i = 0; i < D_CODES; i++)
+			dyn_dtree[i * 2] = 0;
+		for (i = 0; i < BL_CODES; i++)
+			bl_tree[i * 2] = 0;
 
-	const static_dtree_first_part = [0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 14, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 27, 7, 23];
-	const static_dtree_second_part = extractArray([[30, 5]]);
-	StaticTree.static_dtree = flatArray(static_dtree_first_part.map((value, index) => [value, static_dtree_second_part[index]]));
-
-	StaticTree.static_l_desc = new StaticTree(StaticTree.static_ltree, Tree.extra_lbits, LITERALS + 1, L_CODES, MAX_BITS);
-
-	StaticTree.static_d_desc = new StaticTree(StaticTree.static_dtree, Tree.extra_dbits, 0, D_CODES, MAX_BITS);
-
-	StaticTree.static_bl_desc = new StaticTree(null, Tree.extra_blbits, 0, BL_CODES, MAX_BL_BITS);
-
-	// Deflate
-
-	const MAX_MEM_LEVEL = 9;
-	const DEF_MEM_LEVEL = 8;
-
-	function Config(good_length, max_lazy, nice_length, max_chain, func) {
-		const that = this;
-		that.good_length = good_length;
-		that.max_lazy = max_lazy;
-		that.nice_length = nice_length;
-		that.max_chain = max_chain;
-		that.func = func;
+		dyn_ltree[END_BLOCK * 2] = 1;
+		that.opt_len = that.static_len = 0;
+		last_lit = matches = 0;
 	}
 
-	const STORED = 0;
-	const FAST = 1;
-	const SLOW = 2;
-	const config_table = [
-		new Config(0, 0, 0, 0, STORED),
-		new Config(4, 4, 8, 4, FAST),
-		new Config(4, 5, 16, 8, FAST),
-		new Config(4, 6, 32, 32, FAST),
-		new Config(4, 4, 16, 16, SLOW),
-		new Config(8, 16, 32, 32, SLOW),
-		new Config(8, 16, 128, 128, SLOW),
-		new Config(8, 32, 128, 256, SLOW),
-		new Config(32, 128, 258, 1024, SLOW),
-		new Config(32, 258, 258, 4096, SLOW)
-	];
+	// Initialize the tree data structures for a new zlib stream.
+	function tr_init() {
 
-	const z_errmsg = ["need dictionary", // Z_NEED_DICT
-		// 2
-		"stream end", // Z_STREAM_END 1
-		"", // Z_OK 0
-		"", // Z_ERRNO (-1)
-		"stream error", // Z_STREAM_ERROR (-2)
-		"data error", // Z_DATA_ERROR (-3)
-		"", // Z_MEM_ERROR (-4)
-		"buffer error", // Z_BUF_ERROR (-5)
-		"",// Z_VERSION_ERROR (-6)
-		""];
+		l_desc.dyn_tree = dyn_ltree;
+		l_desc.stat_desc = StaticTree.static_l_desc;
 
-	// block not completed, need more input or more output
-	const NeedMore = 0;
+		d_desc.dyn_tree = dyn_dtree;
+		d_desc.stat_desc = StaticTree.static_d_desc;
 
-	// block flush performed
-	const BlockDone = 1;
+		bl_desc.dyn_tree = bl_tree;
+		bl_desc.stat_desc = StaticTree.static_bl_desc;
 
-	// finish started, need only more output at next deflate
-	const FinishStarted = 2;
+		bi_buf = 0;
+		bi_valid = 0;
+		last_eob_len = 8; // enough lookahead for inflate
 
-	// finish done, accept no more input or output
-	const FinishDone = 3;
-
-	// preset dictionary flag in zlib header
-	const PRESET_DICT = 0x20;
-
-	const INIT_STATE = 42;
-	const BUSY_STATE = 113;
-	const FINISH_STATE = 666;
-
-	// The deflate compression method
-	const Z_DEFLATED = 8;
-
-	const STORED_BLOCK = 0;
-	const STATIC_TREES = 1;
-	const DYN_TREES = 2;
-
-	const MIN_MATCH = 3;
-	const MAX_MATCH = 258;
-	const MIN_LOOKAHEAD = (MAX_MATCH + MIN_MATCH + 1);
-
-	function smaller(tree, n, m, depth) {
-		const tn2 = tree[n * 2];
-		const tm2 = tree[m * 2];
-		return (tn2 < tm2 || (tn2 == tm2 && depth[n] <= depth[m]));
+		// Initialize the first block of the first file:
+		init_block();
 	}
 
-	function Deflate() {
+	// Restore the heap property by moving down the tree starting at node k,
+	// exchanging a node with the smallest of its two sons if necessary,
+	// stopping
+	// when the heap property is re-established (each father smaller than its
+	// two sons).
+	that.pqdownheap = function (tree, // the tree to restore
+		k // node to move down
+	) {
+		const heap = that.heap;
+		const v = heap[k];
+		let j = k << 1; // left son of k
+		while (j <= that.heap_len) {
+			// Set j to the smallest of the two sons:
+			if (j < that.heap_len && smaller(tree, heap[j + 1], heap[j], that.depth)) {
+				j++;
+			}
+			// Exit if v is smaller than both sons
+			if (smaller(tree, v, heap[j], that.depth))
+				break;
 
-		const that = this;
-		let strm; // pointer back to this zlib stream
-		let status; // as the name implies
-		// pending_buf; // output still pending
-		let pending_buf_size; // size of pending_buf
-		// pending_out; // next pending byte to output to the stream
-		// pending; // nb of bytes in the pending buffer
+			// Exchange v with the smallest son
+			heap[k] = heap[j];
+			k = j;
+			// And continue down the tree, setting j to the left son of k
+			j <<= 1;
+		}
+		heap[k] = v;
+	};
 
-		// dist_buf; // buffer for distances
-		// lc_buf; // buffer for literals or lengths
-		// To simplify the code, dist_buf and lc_buf have the same number of elements.
-		// To use different lengths, an extra flag array would be necessary.
+	// Scan a literal or distance tree to determine the frequencies of the codes
+	// in the bit length tree.
+	function scan_tree(tree,// the tree to be scanned
+		max_code // and its largest code of non zero frequency
+	) {
+		let prevlen = -1; // last emitted length
+		let curlen; // length of current code
+		let nextlen = tree[0 * 2 + 1]; // length of next code
+		let count = 0; // repeat count of the current code
+		let max_count = 7; // max repeat count
+		let min_count = 4; // min repeat count
 
-		let last_flush; // value of flush param for previous deflate call
+		if (nextlen === 0) {
+			max_count = 138;
+			min_count = 3;
+		}
+		tree[(max_code + 1) * 2 + 1] = 0xffff; // guard
 
-		let w_size; // LZ77 win size (32K by default)
-		let w_bits; // log2(w_size) (8..16)
-		let w_mask; // w_size - 1
+		for (let n = 0; n <= max_code; n++) {
+			curlen = nextlen;
+			nextlen = tree[(n + 1) * 2 + 1];
+			if (++count < max_count && curlen == nextlen) {
+				continue;
+			} else if (count < min_count) {
+				bl_tree[curlen * 2] += count;
+			} else if (curlen !== 0) {
+				if (curlen != prevlen)
+					bl_tree[curlen * 2]++;
+				bl_tree[REP_3_6 * 2]++;
+			} else if (count <= 10) {
+				bl_tree[REPZ_3_10 * 2]++;
+			} else {
+				bl_tree[REPZ_11_138 * 2]++;
+			}
+			count = 0;
+			prevlen = curlen;
+			if (nextlen === 0) {
+				max_count = 138;
+				min_count = 3;
+			} else if (curlen == nextlen) {
+				max_count = 6;
+				min_count = 3;
+			} else {
+				max_count = 7;
+				min_count = 4;
+			}
+		}
+	}
 
-		let win;
-		// Sliding win. Input bytes are read into the second half of the win,
-		// and move to the first half later to keep a dictionary of at least wSize
-		// bytes. With this organization, matches are limited to a distance of
-		// wSize-MAX_MATCH bytes, but this ensures that IO is always
-		// performed with a length multiple of the block size. Also, it limits
-		// the win size to 64K, which is quite useful on MSDOS.
-		// To do: use the user input buffer as sliding win.
+	// Construct the Huffman tree for the bit lengths and return the index in
+	// bl_order of the last bit length code to send.
+	function build_bl_tree() {
+		let max_blindex; // index of last bit length code of non zero freq
 
-		let window_size;
-		// Actual size of win: 2*wSize, except when the user input buffer
-		// is directly used as sliding win.
+		// Determine the bit length frequencies for literal and distance trees
+		scan_tree(dyn_ltree, l_desc.max_code);
+		scan_tree(dyn_dtree, d_desc.max_code);
 
-		let prev;
-		// Link to older string with same hash index. To limit the size of this
-		// array to 64K, this link is maintained only for the last 32K strings.
-		// An index in this array is thus a win index modulo 32K.
+		// Build the bit length tree:
+		bl_desc.build_tree(that);
+		// opt_len now includes the length of the tree representations, except
+		// the lengths of the bit lengths codes and the 5+5+4 bits for the
+		// counts.
 
-		let head; // Heads of the hash chains or NIL.
+		// Determine the number of bit length codes to send. The pkzip format
+		// requires that at least 4 bit length codes be sent. (appnote.txt says
+		// 3 but the actual value used is 4.)
+		for (max_blindex = BL_CODES - 1; max_blindex >= 3; max_blindex--) {
+			if (bl_tree[Tree.bl_order[max_blindex] * 2 + 1] !== 0)
+				break;
+		}
+		// Update opt_len to include the bit length tree and counts
+		that.opt_len += 3 * (max_blindex + 1) + 5 + 5 + 4;
 
-		let ins_h; // hash index of string to be inserted
-		let hash_size; // number of elements in hash table
-		let hash_bits; // log2(hash_size)
-		let hash_mask; // hash_size-1
+		return max_blindex;
+	}
 
-		// Number of bits by which ins_h must be shifted at each input
-		// step. It must be such that after MIN_MATCH steps, the oldest
-		// byte no longer takes part in the hash key, that is:
-		// hash_shift * MIN_MATCH >= hash_bits
-		let hash_shift;
+	// Output a byte on the stream.
+	// IN assertion: there is enough room in pending_buf.
+	function put_byte(p) {
+		that.pending_buf[that.pending++] = p;
+	}
 
-		// Window position at the beginning of the current output block. Gets
-		// negative when the win is moved backwards.
+	function put_short(w) {
+		put_byte(w & 0xff);
+		put_byte((w >>> 8) & 0xff);
+	}
 
-		let block_start;
+	function putShortMSB(b) {
+		put_byte((b >> 8) & 0xff);
+		put_byte((b & 0xff) & 0xff);
+	}
 
-		let match_length; // length of best match
-		let prev_match; // previous match
-		let match_available; // set if previous match exists
-		let strstart; // start of string to insert
-		let match_start; // start of matching string
-		let lookahead; // number of valid bytes ahead in win
+	function send_bits(value, length) {
+		let val;
+		const len = length;
+		if (bi_valid > Buf_size - len) {
+			val = value;
+			// bi_buf |= (val << bi_valid);
+			bi_buf |= ((val << bi_valid) & 0xffff);
+			put_short(bi_buf);
+			bi_buf = val >>> (Buf_size - bi_valid);
+			bi_valid += len - Buf_size;
+		} else {
+			// bi_buf |= (value) << bi_valid;
+			bi_buf |= (((value) << bi_valid) & 0xffff);
+			bi_valid += len;
+		}
+	}
 
-		// Length of the best match at previous step. Matches not greater than this
-		// are discarded. This is used in the lazy match evaluation.
-		let prev_length;
+	function send_code(c, tree) {
+		const c2 = c * 2;
+		send_bits(tree[c2] & 0xffff, tree[c2 + 1] & 0xffff);
+	}
 
-		// To speed up deflation, hash chains are never searched beyond this
-		// length. A higher limit improves compression ratio but degrades the speed.
-		let max_chain_length;
+	// Send a literal or distance tree in compressed form, using the codes in
+	// bl_tree.
+	function send_tree(tree,// the tree to be sent
+		max_code // and its largest code of non zero frequency
+	) {
+		let n; // iterates over all tree elements
+		let prevlen = -1; // last emitted length
+		let curlen; // length of current code
+		let nextlen = tree[0 * 2 + 1]; // length of next code
+		let count = 0; // repeat count of the current code
+		let max_count = 7; // max repeat count
+		let min_count = 4; // min repeat count
 
-		// Attempt to find a better match only when the current match is strictly
-		// smaller than this value. This mechanism is used only for compression
-		// levels >= 4.
-		let max_lazy_match;
+		if (nextlen === 0) {
+			max_count = 138;
+			min_count = 3;
+		}
 
-		// Insert new strings in the hash table only if the match length is not
-		// greater than this length. This saves time but degrades compression.
-		// max_insert_length is used only for compression levels <= 3.
+		for (n = 0; n <= max_code; n++) {
+			curlen = nextlen;
+			nextlen = tree[(n + 1) * 2 + 1];
+			if (++count < max_count && curlen == nextlen) {
+				continue;
+			} else if (count < min_count) {
+				do {
+					send_code(curlen, bl_tree);
+				} while (--count !== 0);
+			} else if (curlen !== 0) {
+				if (curlen != prevlen) {
+					send_code(curlen, bl_tree);
+					count--;
+				}
+				send_code(REP_3_6, bl_tree);
+				send_bits(count - 3, 2);
+			} else if (count <= 10) {
+				send_code(REPZ_3_10, bl_tree);
+				send_bits(count - 3, 3);
+			} else {
+				send_code(REPZ_11_138, bl_tree);
+				send_bits(count - 11, 7);
+			}
+			count = 0;
+			prevlen = curlen;
+			if (nextlen === 0) {
+				max_count = 138;
+				min_count = 3;
+			} else if (curlen == nextlen) {
+				max_count = 6;
+				min_count = 3;
+			} else {
+				max_count = 7;
+				min_count = 4;
+			}
+		}
+	}
 
-		let level; // compression level (1..9)
-		let strategy; // favor or force Huffman coding
+	// Send the header for a block using dynamic Huffman trees: the counts, the
+	// lengths of the bit length codes, the literal tree and the distance tree.
+	// IN assertion: lcodes >= 257, dcodes >= 1, blcodes >= 4.
+	function send_all_trees(lcodes, dcodes, blcodes) {
+		let rank; // index in bl_order
 
-		// Use a faster search when the previous match is longer than this
-		let good_match;
+		send_bits(lcodes - 257, 5); // not +255 as stated in appnote.txt
+		send_bits(dcodes - 1, 5);
+		send_bits(blcodes - 4, 4); // not -3 as stated in appnote.txt
+		for (rank = 0; rank < blcodes; rank++) {
+			send_bits(bl_tree[Tree.bl_order[rank] * 2 + 1], 3);
+		}
+		send_tree(dyn_ltree, lcodes - 1); // literal tree
+		send_tree(dyn_dtree, dcodes - 1); // distance tree
+	}
 
-		// Stop searching when current match exceeds this
-		let nice_match;
+	// Flush the bit buffer, keeping at most 7 bits in it.
+	function bi_flush() {
+		if (bi_valid == 16) {
+			put_short(bi_buf);
+			bi_buf = 0;
+			bi_valid = 0;
+		} else if (bi_valid >= 8) {
+			put_byte(bi_buf & 0xff);
+			bi_buf >>>= 8;
+			bi_valid -= 8;
+		}
+	}
 
-		let dyn_ltree; // literal and length tree
-		let dyn_dtree; // distance tree
-		let bl_tree; // Huffman tree for bit lengths
+	// Send one empty static block to give enough lookahead for inflate.
+	// This takes 10 bits, of which 7 may remain in the bit buffer.
+	// The current inflate code requires 9 bits of lookahead. If the
+	// last two codes for the previous block (real code plus EOB) were coded
+	// on 5 bits or less, inflate may have only 5+3 bits of lookahead to decode
+	// the last real code. In this case we send two empty static blocks instead
+	// of one. (There are no problems if the previous block is stored or fixed.)
+	// To simplify the code, we assume the worst case of last real code encoded
+	// on one bit only.
+	function _tr_align() {
+		send_bits(STATIC_TREES << 1, 3);
+		send_code(END_BLOCK, StaticTree.static_ltree);
 
-		const l_desc = new Tree(); // desc for literal tree
-		const d_desc = new Tree(); // desc for distance tree
-		const bl_desc = new Tree(); // desc for bit length tree
+		bi_flush();
 
-		// that.heap_len; // number of elements in the heap
-		// that.heap_max; // element of largest frequency
-		// The sons of heap[n] are heap[2*n] and heap[2*n+1]. heap[0] is not used.
-		// The same heap array is used to build all trees.
+		// Of the 10 bits for the empty block, we have already sent
+		// (10 - bi_valid) bits. The lookahead for the last real code (before
+		// the EOB of the previous block) was thus at least one plus the length
+		// of the EOB plus what we have just sent of the empty static block.
+		if (1 + last_eob_len + 10 - bi_valid < 9) {
+			send_bits(STATIC_TREES << 1, 3);
+			send_code(END_BLOCK, StaticTree.static_ltree);
+			bi_flush();
+		}
+		last_eob_len = 7;
+	}
 
-		// Depth of each subtree used as tie breaker for trees of equal frequency
-		that.depth = [];
+	// Save the match info and tally the frequency counts. Return true if
+	// the current block must be flushed.
+	function _tr_tally(dist, // distance of matched string
+		lc // match length-MIN_MATCH or unmatched char (if dist==0)
+	) {
+		let out_length, in_length, dcode;
+		that.dist_buf[last_lit] = dist;
+		that.lc_buf[last_lit] = lc & 0xff;
+		last_lit++;
 
-		// Size of match buffer for literals/lengths. There are 4 reasons for
-		// limiting lit_bufsize to 64K:
-		// - frequencies can be kept in 16 bit counters
-		// - if compression is not successful for the first block, all input
-		// data is still in the win so we can still emit a stored block even
-		// when input comes from standard input. (This can also be done for
-		// all blocks if lit_bufsize is not greater than 32K.)
-		// - if compression is not successful for a file smaller than 64K, we can
-		// even emit a stored file instead of a stored block (saving 5 bytes).
-		// This is applicable only for zip (not gzip or zlib).
-		// - creating new Huffman trees less frequently may not provide fast
-		// adaptation to changes in the input data statistics. (Take for
-		// example a binary file with poorly compressible code followed by
-		// a highly compressible string table.) Smaller buffer sizes give
-		// fast adaptation but have of course the overhead of transmitting
-		// trees more frequently.
-		// - I can't count above 4
-		let lit_bufsize;
+		if (dist === 0) {
+			// lc is the unmatched char
+			dyn_ltree[lc * 2]++;
+		} else {
+			matches++;
+			// Here, lc is the match length - MIN_MATCH
+			dist--; // dist = match distance - 1
+			dyn_ltree[(Tree._length_code[lc] + LITERALS + 1) * 2]++;
+			dyn_dtree[Tree.d_code(dist) * 2]++;
+		}
 
-		let last_lit; // running index in dist_buf and lc_buf
+		if ((last_lit & 0x1fff) === 0 && level > 2) {
+			// Compute an upper bound for the compressed length
+			out_length = last_lit * 8;
+			in_length = strstart - block_start;
+			for (dcode = 0; dcode < D_CODES; dcode++) {
+				out_length += dyn_dtree[dcode * 2] * (5 + Tree.extra_dbits[dcode]);
+			}
+			out_length >>>= 3;
+			if ((matches < Math.floor(last_lit / 2)) && out_length < Math.floor(in_length / 2))
+				return true;
+		}
 
-		// that.opt_len; // bit length of current block with optimal trees
-		// that.static_len; // bit length of current block with static trees
-		let matches; // number of string matches in current block
-		let last_eob_len; // bit length of EOB code for last block
+		return (last_lit == lit_bufsize - 1);
+		// We avoid equality with lit_bufsize because of wraparound at 64K
+		// on 16 bit machines and because stored blocks are restricted to
+		// 64K-1 bytes.
+	}
 
-		// Output buffer. bits are inserted starting at the bottom (least
-		// significant bits).
-		let bi_buf;
+	// Send the block data compressed using the given Huffman trees
+	function compress_block(ltree, dtree) {
+		let dist; // distance of matched string
+		let lc; // match length or unmatched char (if dist === 0)
+		let lx = 0; // running index in dist_buf and lc_buf
+		let code; // the code to send
+		let extra; // number of extra bits to send
 
-		// Number of valid bits in bi_buf. All bits above the last valid bit
-		// are always zero.
-		let bi_valid;
+		if (last_lit !== 0) {
+			do {
+				dist = that.dist_buf[lx];
+				lc = that.lc_buf[lx];
+				lx++;
 
-		// number of codes at each bit length for an optimal tree
-		that.bl_count = [];
+				if (dist === 0) {
+					send_code(lc, ltree); // send a literal byte
+				} else {
+					// Here, lc is the match length - MIN_MATCH
+					code = Tree._length_code[lc];
 
-		// heap used to build the Huffman trees
-		that.heap = [];
+					send_code(code + LITERALS + 1, ltree); // send the length
+					// code
+					extra = Tree.extra_lbits[code];
+					if (extra !== 0) {
+						lc -= Tree.base_length[code];
+						send_bits(lc, extra); // send the extra length bits
+					}
+					dist--; // dist is now the match distance - 1
+					code = Tree.d_code(dist);
 
-		dyn_ltree = [];
-		dyn_dtree = [];
-		bl_tree = [];
+					send_code(code, dtree); // send the distance code
+					extra = Tree.extra_dbits[code];
+					if (extra !== 0) {
+						dist -= Tree.base_dist[code];
+						send_bits(dist, extra); // send the extra distance bits
+					}
+				} // literal or match pair ?
+			} while (lx < last_lit);
+		}
 
-		function lm_init() {
-			window_size = 2 * w_size;
+		send_code(END_BLOCK, ltree);
+		last_eob_len = ltree[END_BLOCK * 2 + 1];
+	}
 
-			head[hash_size - 1] = 0;
-			for (let i = 0; i < hash_size - 1; i++) {
-				head[i] = 0;
+	// Flush the bit buffer and align the output on a byte boundary
+	function bi_windup() {
+		if (bi_valid > 8) {
+			put_short(bi_buf);
+		} else if (bi_valid > 0) {
+			put_byte(bi_buf & 0xff);
+		}
+		bi_buf = 0;
+		bi_valid = 0;
+	}
+
+	// Copy a stored block, storing first the length and its
+	// one's complement if requested.
+	function copy_block(buf, // the input data
+		len, // its length
+		header // true if block header must be written
+	) {
+		bi_windup(); // align on byte boundary
+		last_eob_len = 8; // enough lookahead for inflate
+
+		if (header) {
+			put_short(len);
+			put_short(~len);
+		}
+
+		that.pending_buf.set(win.subarray(buf, buf + len), that.pending);
+		that.pending += len;
+	}
+
+	// Send a stored block
+	function _tr_stored_block(buf, // input block
+		stored_len, // length of input block
+		eof // true if this is the last block for a file
+	) {
+		send_bits((STORED_BLOCK << 1) + (eof ? 1 : 0), 3); // send block type
+		copy_block(buf, stored_len, true); // with header
+	}
+
+	// Determine the best encoding for the current block: dynamic trees, static
+	// trees or store, and output the encoded block to the zip file.
+	function _tr_flush_block(buf, // input block, or NULL if too old
+		stored_len, // length of input block
+		eof // true if this is the last block for a file
+	) {
+		let opt_lenb, static_lenb;// opt_len and static_len in bytes
+		let max_blindex = 0; // index of last bit length code of non zero freq
+
+		// Build the Huffman trees unless a stored block is forced
+		if (level > 0) {
+			// Construct the literal and distance trees
+			l_desc.build_tree(that);
+
+			d_desc.build_tree(that);
+
+			// At this point, opt_len and static_len are the total bit lengths
+			// of
+			// the compressed block data, excluding the tree representations.
+
+			// Build the bit length tree for the above two trees, and get the
+			// index
+			// in bl_order of the last bit length code to send.
+			max_blindex = build_bl_tree();
+
+			// Determine the best encoding. Compute first the block length in
+			// bytes
+			opt_lenb = (that.opt_len + 3 + 7) >>> 3;
+			static_lenb = (that.static_len + 3 + 7) >>> 3;
+
+			if (static_lenb <= opt_lenb)
+				opt_lenb = static_lenb;
+		} else {
+			opt_lenb = static_lenb = stored_len + 5; // force a stored block
+		}
+
+		if ((stored_len + 4 <= opt_lenb) && buf != -1) {
+			// 4: two words for the lengths
+			// The test buf != NULL is only necessary if LIT_BUFSIZE > WSIZE.
+			// Otherwise we can't have processed more than WSIZE input bytes
+			// since
+			// the last block flush, because compression would have been
+			// successful. If LIT_BUFSIZE <= WSIZE, it is never too late to
+			// transform a block into a stored block.
+			_tr_stored_block(buf, stored_len, eof);
+		} else if (static_lenb == opt_lenb) {
+			send_bits((STATIC_TREES << 1) + (eof ? 1 : 0), 3);
+			compress_block(StaticTree.static_ltree, StaticTree.static_dtree);
+		} else {
+			send_bits((DYN_TREES << 1) + (eof ? 1 : 0), 3);
+			send_all_trees(l_desc.max_code + 1, d_desc.max_code + 1, max_blindex + 1);
+			compress_block(dyn_ltree, dyn_dtree);
+		}
+
+		// The above check is made mod 2^32, for files larger than 512 MB
+		// and uLong implemented on 32 bits.
+
+		init_block();
+
+		if (eof) {
+			bi_windup();
+		}
+	}
+
+	function flush_block_only(eof) {
+		_tr_flush_block(block_start >= 0 ? block_start : -1, strstart - block_start, eof);
+		block_start = strstart;
+		strm.flush_pending();
+	}
+
+	// Fill the win when the lookahead becomes insufficient.
+	// Updates strstart and lookahead.
+	//
+	// IN assertion: lookahead < MIN_LOOKAHEAD
+	// OUT assertions: strstart <= window_size-MIN_LOOKAHEAD
+	// At least one byte has been read, or avail_in === 0; reads are
+	// performed for at least two bytes (required for the zip translate_eol
+	// option -- not supported here).
+	function fill_window() {
+		let n, m;
+		let p;
+		let more; // Amount of free space at the end of the win.
+
+		do {
+			more = (window_size - lookahead - strstart);
+
+			// Deal with !@#$% 64K limit:
+			if (more === 0 && strstart === 0 && lookahead === 0) {
+				more = w_size;
+			} else if (more == -1) {
+				// Very unlikely, but possible on 16 bit machine if strstart ==
+				// 0
+				// and lookahead == 1 (input done one byte at time)
+				more--;
+
+				// If the win is almost full and there is insufficient
+				// lookahead,
+				// move the upper half to the lower one to make room in the
+				// upper half.
+			} else if (strstart >= w_size + w_size - MIN_LOOKAHEAD) {
+				win.set(win.subarray(w_size, w_size + w_size), 0);
+
+				match_start -= w_size;
+				strstart -= w_size; // we now have strstart >= MAX_DIST
+				block_start -= w_size;
+
+				// Slide the hash table (could be avoided with 32 bit values
+				// at the expense of memory usage). We slide even when level ==
+				// 0
+				// to keep the hash table consistent if we switch back to level
+				// > 0
+				// later. (Using level 0 permanently is not an optimal usage of
+				// zlib, so we don't care about this pathological case.)
+
+				n = hash_size;
+				p = n;
+				do {
+					m = (head[--p] & 0xffff);
+					head[p] = (m >= w_size ? m - w_size : 0);
+				} while (--n !== 0);
+
+				n = w_size;
+				p = n;
+				do {
+					m = (prev[--p] & 0xffff);
+					prev[p] = (m >= w_size ? m - w_size : 0);
+					// If n is not on any hash chain, prev[n] is garbage but
+					// its value will never be used.
+				} while (--n !== 0);
+				more += w_size;
 			}
 
-			// Set the default configuration parameters:
+			if (strm.avail_in === 0)
+				return;
+
+			// If there was no sliding:
+			// strstart <= WSIZE+MAX_DIST-1 && lookahead <= MIN_LOOKAHEAD - 1 &&
+			// more == window_size - lookahead - strstart
+			// => more >= window_size - (MIN_LOOKAHEAD-1 + WSIZE + MAX_DIST-1)
+			// => more >= window_size - 2*WSIZE + 2
+			// In the BIG_MEM or MMAP case (not yet supported),
+			// window_size == input_size + MIN_LOOKAHEAD &&
+			// strstart + s->lookahead <= input_size => more >= MIN_LOOKAHEAD.
+			// Otherwise, window_size == 2*WSIZE so more >= 2.
+			// If there was sliding, more >= WSIZE. So in all cases, more >= 2.
+
+			n = strm.read_buf(win, strstart + lookahead, more);
+			lookahead += n;
+
+			// Initialize the hash value now that we have some input:
+			if (lookahead >= MIN_MATCH) {
+				ins_h = win[strstart] & 0xff;
+				ins_h = (((ins_h) << hash_shift) ^ (win[strstart + 1] & 0xff)) & hash_mask;
+			}
+			// If the whole input has less than MIN_MATCH bytes, ins_h is
+			// garbage,
+			// but this is not important since only literal bytes will be
+			// emitted.
+		} while (lookahead < MIN_LOOKAHEAD && strm.avail_in !== 0);
+	}
+
+	// Copy without compression as much as possible from the input stream,
+	// return
+	// the current block state.
+	// This function does not insert new strings in the dictionary since
+	// uncompressible data is probably not useful. This function is used
+	// only for the level=0 compression option.
+	// NOTE: this function should be optimized to avoid extra copying from
+	// win to pending_buf.
+	function deflate_stored(flush) {
+		// Stored blocks are limited to 0xffff bytes, pending_buf is limited
+		// to pending_buf_size, and each stored block has a 5 byte header:
+
+		let max_block_size = 0xffff;
+		let max_start;
+
+		if (max_block_size > pending_buf_size - 5) {
+			max_block_size = pending_buf_size - 5;
+		}
+
+		// Copy as much as possible from input to output:
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			// Fill the win as much as possible:
+			if (lookahead <= 1) {
+				fill_window();
+				if (lookahead === 0 && flush == Z_NO_FLUSH)
+					return NeedMore;
+				if (lookahead === 0)
+					break; // flush the current block
+			}
+
+			strstart += lookahead;
+			lookahead = 0;
+
+			// Emit a stored block if pending_buf will be full:
+			max_start = block_start + max_block_size;
+			if (strstart === 0 || strstart >= max_start) {
+				// strstart === 0 is possible when wraparound on 16-bit machine
+				lookahead = (strstart - max_start);
+				strstart = max_start;
+
+				flush_block_only(false);
+				if (strm.avail_out === 0)
+					return NeedMore;
+
+			}
+
+			// Flush if we may have to slide, otherwise block_start may become
+			// negative and the data will be gone:
+			if (strstart - block_start >= w_size - MIN_LOOKAHEAD) {
+				flush_block_only(false);
+				if (strm.avail_out === 0)
+					return NeedMore;
+			}
+		}
+
+		flush_block_only(flush == Z_FINISH);
+		if (strm.avail_out === 0)
+			return (flush == Z_FINISH) ? FinishStarted : NeedMore;
+
+		return flush == Z_FINISH ? FinishDone : BlockDone;
+	}
+
+	function longest_match(cur_match) {
+		let chain_length = max_chain_length; // max hash chain length
+		let scan = strstart; // current string
+		let match; // matched string
+		let len; // length of current match
+		let best_len = prev_length; // best match length so far
+		const limit = strstart > (w_size - MIN_LOOKAHEAD) ? strstart - (w_size - MIN_LOOKAHEAD) : 0;
+		let _nice_match = nice_match;
+
+		// Stop when cur_match becomes <= limit. To simplify the code,
+		// we prevent matches with the string of win index 0.
+
+		const wmask = w_mask;
+
+		const strend = strstart + MAX_MATCH;
+		let scan_end1 = win[scan + best_len - 1];
+		let scan_end = win[scan + best_len];
+
+		// The code is optimized for HASH_BITS >= 8 and MAX_MATCH-2 multiple of
+		// 16.
+		// It is easy to get rid of this optimization if necessary.
+
+		// Do not waste too much time if we already have a good match:
+		if (prev_length >= good_match) {
+			chain_length >>= 2;
+		}
+
+		// Do not look for matches beyond the end of the input. This is
+		// necessary
+		// to make deflate deterministic.
+		if (_nice_match > lookahead)
+			_nice_match = lookahead;
+
+		do {
+			match = cur_match;
+
+			// Skip to next match if the match length cannot increase
+			// or if the match length is less than 2:
+			if (win[match + best_len] != scan_end || win[match + best_len - 1] != scan_end1 || win[match] != win[scan]
+				|| win[++match] != win[scan + 1])
+				continue;
+
+			// The check at best_len-1 can be removed because it will be made
+			// again later. (This heuristic is not always a win.)
+			// It is not necessary to compare scan[2] and match[2] since they
+			// are always equal when the other bytes match, given that
+			// the hash keys are equal and that HASH_BITS >= 8.
+			scan += 2;
+			match++;
+
+			// We check for insufficient lookahead only every 8th comparison;
+			// the 256th check will be made at strstart+258.
+			// eslint-disable-next-line no-empty
+			do {
+				// empty block
+			} while (win[++scan] == win[++match] && win[++scan] == win[++match] && win[++scan] == win[++match]
+			&& win[++scan] == win[++match] && win[++scan] == win[++match] && win[++scan] == win[++match]
+			&& win[++scan] == win[++match] && win[++scan] == win[++match] && scan < strend);
+
+			len = MAX_MATCH - (strend - scan);
+			scan = strend - MAX_MATCH;
+
+			if (len > best_len) {
+				match_start = cur_match;
+				best_len = len;
+				if (len >= _nice_match)
+					break;
+				scan_end1 = win[scan + best_len - 1];
+				scan_end = win[scan + best_len];
+			}
+
+		} while ((cur_match = (prev[cur_match & wmask] & 0xffff)) > limit && --chain_length !== 0);
+
+		if (best_len <= lookahead)
+			return best_len;
+		return lookahead;
+	}
+
+	// Compress as much as possible from the input stream, return the current
+	// block state.
+	// This function does not perform lazy evaluation of matches and inserts
+	// new strings in the dictionary only for unmatched strings or for short
+	// matches. It is used only for the fast compression options.
+	function deflate_fast(flush) {
+		// short hash_head = 0; // head of the hash chain
+		let hash_head = 0; // head of the hash chain
+		let bflush; // set if current block must be flushed
+
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			// Make sure that we always have enough lookahead, except
+			// at the end of the input file. We need MAX_MATCH bytes
+			// for the next match, plus MIN_MATCH bytes to insert the
+			// string following the next match.
+			if (lookahead < MIN_LOOKAHEAD) {
+				fill_window();
+				if (lookahead < MIN_LOOKAHEAD && flush == Z_NO_FLUSH) {
+					return NeedMore;
+				}
+				if (lookahead === 0)
+					break; // flush the current block
+			}
+
+			// Insert the string win[strstart .. strstart+2] in the
+			// dictionary, and set hash_head to the head of the hash chain:
+			if (lookahead >= MIN_MATCH) {
+				ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
+
+				// prev[strstart&w_mask]=hash_head=head[ins_h];
+				hash_head = (head[ins_h] & 0xffff);
+				prev[strstart & w_mask] = head[ins_h];
+				head[ins_h] = strstart;
+			}
+
+			// Find the longest match, discarding those <= prev_length.
+			// At this point we have always match_length < MIN_MATCH
+
+			if (hash_head !== 0 && ((strstart - hash_head) & 0xffff) <= w_size - MIN_LOOKAHEAD) {
+				// To simplify the code, we prevent matches with the string
+				// of win index 0 (in particular we have to avoid a match
+				// of the string with itself at the start of the input file).
+				if (strategy != Z_HUFFMAN_ONLY) {
+					match_length = longest_match(hash_head);
+				}
+				// longest_match() sets match_start
+			}
+			if (match_length >= MIN_MATCH) {
+				// check_match(strstart, match_start, match_length);
+
+				bflush = _tr_tally(strstart - match_start, match_length - MIN_MATCH);
+
+				lookahead -= match_length;
+
+				// Insert new strings in the hash table only if the match length
+				// is not too large. This saves time but degrades compression.
+				if (match_length <= max_lazy_match && lookahead >= MIN_MATCH) {
+					match_length--; // string at strstart already in hash table
+					do {
+						strstart++;
+
+						ins_h = ((ins_h << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
+						// prev[strstart&w_mask]=hash_head=head[ins_h];
+						hash_head = (head[ins_h] & 0xffff);
+						prev[strstart & w_mask] = head[ins_h];
+						head[ins_h] = strstart;
+
+						// strstart never exceeds WSIZE-MAX_MATCH, so there are
+						// always MIN_MATCH bytes ahead.
+					} while (--match_length !== 0);
+					strstart++;
+				} else {
+					strstart += match_length;
+					match_length = 0;
+					ins_h = win[strstart] & 0xff;
+
+					ins_h = (((ins_h) << hash_shift) ^ (win[strstart + 1] & 0xff)) & hash_mask;
+					// If lookahead < MIN_MATCH, ins_h is garbage, but it does
+					// not
+					// matter since it will be recomputed at next deflate call.
+				}
+			} else {
+				// No match, output a literal byte
+
+				bflush = _tr_tally(0, win[strstart] & 0xff);
+				lookahead--;
+				strstart++;
+			}
+			if (bflush) {
+
+				flush_block_only(false);
+				if (strm.avail_out === 0)
+					return NeedMore;
+			}
+		}
+
+		flush_block_only(flush == Z_FINISH);
+		if (strm.avail_out === 0) {
+			if (flush == Z_FINISH)
+				return FinishStarted;
+			else
+				return NeedMore;
+		}
+		return flush == Z_FINISH ? FinishDone : BlockDone;
+	}
+
+	// Same as above, but achieves better compression. We use a lazy
+	// evaluation for matches: a match is finally adopted only if there is
+	// no better match at the next win position.
+	function deflate_slow(flush) {
+		// short hash_head = 0; // head of hash chain
+		let hash_head = 0; // head of hash chain
+		let bflush; // set if current block must be flushed
+		let max_insert;
+
+		// Process the input block.
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			// Make sure that we always have enough lookahead, except
+			// at the end of the input file. We need MAX_MATCH bytes
+			// for the next match, plus MIN_MATCH bytes to insert the
+			// string following the next match.
+
+			if (lookahead < MIN_LOOKAHEAD) {
+				fill_window();
+				if (lookahead < MIN_LOOKAHEAD && flush == Z_NO_FLUSH) {
+					return NeedMore;
+				}
+				if (lookahead === 0)
+					break; // flush the current block
+			}
+
+			// Insert the string win[strstart .. strstart+2] in the
+			// dictionary, and set hash_head to the head of the hash chain:
+
+			if (lookahead >= MIN_MATCH) {
+				ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
+				// prev[strstart&w_mask]=hash_head=head[ins_h];
+				hash_head = (head[ins_h] & 0xffff);
+				prev[strstart & w_mask] = head[ins_h];
+				head[ins_h] = strstart;
+			}
+
+			// Find the longest match, discarding those <= prev_length.
+			prev_length = match_length;
+			prev_match = match_start;
+			match_length = MIN_MATCH - 1;
+
+			if (hash_head !== 0 && prev_length < max_lazy_match && ((strstart - hash_head) & 0xffff) <= w_size - MIN_LOOKAHEAD) {
+				// To simplify the code, we prevent matches with the string
+				// of win index 0 (in particular we have to avoid a match
+				// of the string with itself at the start of the input file).
+
+				if (strategy != Z_HUFFMAN_ONLY) {
+					match_length = longest_match(hash_head);
+				}
+				// longest_match() sets match_start
+
+				if (match_length <= 5 && (strategy == Z_FILTERED || (match_length == MIN_MATCH && strstart - match_start > 4096))) {
+
+					// If prev_match is also MIN_MATCH, match_start is garbage
+					// but we will ignore the current match anyway.
+					match_length = MIN_MATCH - 1;
+				}
+			}
+
+			// If there was a match at the previous step and the current
+			// match is not better, output the previous match:
+			if (prev_length >= MIN_MATCH && match_length <= prev_length) {
+				max_insert = strstart + lookahead - MIN_MATCH;
+				// Do not insert strings in hash table beyond this.
+
+				// check_match(strstart-1, prev_match, prev_length);
+
+				bflush = _tr_tally(strstart - 1 - prev_match, prev_length - MIN_MATCH);
+
+				// Insert in hash table all strings up to the end of the match.
+				// strstart-1 and strstart are already inserted. If there is not
+				// enough lookahead, the last two strings are not inserted in
+				// the hash table.
+				lookahead -= prev_length - 1;
+				prev_length -= 2;
+				do {
+					if (++strstart <= max_insert) {
+						ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
+						// prev[strstart&w_mask]=hash_head=head[ins_h];
+						hash_head = (head[ins_h] & 0xffff);
+						prev[strstart & w_mask] = head[ins_h];
+						head[ins_h] = strstart;
+					}
+				} while (--prev_length !== 0);
+				match_available = 0;
+				match_length = MIN_MATCH - 1;
+				strstart++;
+
+				if (bflush) {
+					flush_block_only(false);
+					if (strm.avail_out === 0)
+						return NeedMore;
+				}
+			} else if (match_available !== 0) {
+
+				// If there was no match at the previous position, output a
+				// single literal. If there was a match but the current match
+				// is longer, truncate the previous match to a single literal.
+
+				bflush = _tr_tally(0, win[strstart - 1] & 0xff);
+
+				if (bflush) {
+					flush_block_only(false);
+				}
+				strstart++;
+				lookahead--;
+				if (strm.avail_out === 0)
+					return NeedMore;
+			} else {
+				// There is no previous match to compare with, wait for
+				// the next step to decide.
+
+				match_available = 1;
+				strstart++;
+				lookahead--;
+			}
+		}
+
+		if (match_available !== 0) {
+			bflush = _tr_tally(0, win[strstart - 1] & 0xff);
+			match_available = 0;
+		}
+		flush_block_only(flush == Z_FINISH);
+
+		if (strm.avail_out === 0) {
+			if (flush == Z_FINISH)
+				return FinishStarted;
+			else
+				return NeedMore;
+		}
+
+		return flush == Z_FINISH ? FinishDone : BlockDone;
+	}
+
+	function deflateReset(strm) {
+		strm.total_in = strm.total_out = 0;
+		strm.msg = null; //
+
+		that.pending = 0;
+		that.pending_out = 0;
+
+		status = BUSY_STATE;
+
+		last_flush = Z_NO_FLUSH;
+
+		tr_init();
+		lm_init();
+		return Z_OK;
+	}
+
+	that.deflateInit = function (strm, _level, bits, _method, memLevel, _strategy) {
+		if (!_method)
+			_method = Z_DEFLATED;
+		if (!memLevel)
+			memLevel = DEF_MEM_LEVEL;
+		if (!_strategy)
+			_strategy = Z_DEFAULT_STRATEGY;
+
+		// byte[] my_version=ZLIB_VERSION;
+
+		//
+		// if (!version || version[0] != my_version[0]
+		// || stream_size != sizeof(z_stream)) {
+		// return Z_VERSION_ERROR;
+		// }
+
+		strm.msg = null;
+
+		if (_level == Z_DEFAULT_COMPRESSION)
+			_level = 6;
+
+		if (memLevel < 1 || memLevel > MAX_MEM_LEVEL || _method != Z_DEFLATED || bits < 9 || bits > 15 || _level < 0 || _level > 9 || _strategy < 0
+			|| _strategy > Z_HUFFMAN_ONLY) {
+			return Z_STREAM_ERROR;
+		}
+
+		strm.dstate = that;
+
+		w_bits = bits;
+		w_size = 1 << w_bits;
+		w_mask = w_size - 1;
+
+		hash_bits = memLevel + 7;
+		hash_size = 1 << hash_bits;
+		hash_mask = hash_size - 1;
+		hash_shift = Math.floor((hash_bits + MIN_MATCH - 1) / MIN_MATCH);
+
+		win = new Uint8Array(w_size * 2);
+		prev = [];
+		head = [];
+
+		lit_bufsize = 1 << (memLevel + 6); // 16K elements by default
+
+		that.pending_buf = new Uint8Array(lit_bufsize * 4);
+		pending_buf_size = lit_bufsize * 4;
+
+		that.dist_buf = new Uint16Array(lit_bufsize);
+		that.lc_buf = new Uint8Array(lit_bufsize);
+
+		level = _level;
+
+		strategy = _strategy;
+
+		return deflateReset(strm);
+	};
+
+	that.deflateEnd = function () {
+		if (status != INIT_STATE && status != BUSY_STATE && status != FINISH_STATE) {
+			return Z_STREAM_ERROR;
+		}
+		// Deallocate in reverse order of allocations:
+		that.lc_buf = null;
+		that.dist_buf = null;
+		that.pending_buf = null;
+		head = null;
+		prev = null;
+		win = null;
+		// free
+		that.dstate = null;
+		return status == BUSY_STATE ? Z_DATA_ERROR : Z_OK;
+	};
+
+	that.deflateParams = function (strm, _level, _strategy) {
+		let err = Z_OK;
+
+		if (_level == Z_DEFAULT_COMPRESSION) {
+			_level = 6;
+		}
+		if (_level < 0 || _level > 9 || _strategy < 0 || _strategy > Z_HUFFMAN_ONLY) {
+			return Z_STREAM_ERROR;
+		}
+
+		if (config_table[level].func != config_table[_level].func && strm.total_in !== 0) {
+			// Flush the last buffer:
+			err = strm.deflate(Z_PARTIAL_FLUSH);
+		}
+
+		if (level != _level) {
+			level = _level;
 			max_lazy_match = config_table[level].max_lazy;
 			good_match = config_table[level].good_length;
 			nice_match = config_table[level].nice_length;
 			max_chain_length = config_table[level].max_chain;
-
-			strstart = 0;
-			block_start = 0;
-			lookahead = 0;
-			match_length = prev_length = MIN_MATCH - 1;
-			match_available = 0;
-			ins_h = 0;
 		}
-
-		function init_block() {
-			let i;
-			// Initialize the trees.
-			for (i = 0; i < L_CODES; i++)
-				dyn_ltree[i * 2] = 0;
-			for (i = 0; i < D_CODES; i++)
-				dyn_dtree[i * 2] = 0;
-			for (i = 0; i < BL_CODES; i++)
-				bl_tree[i * 2] = 0;
-
-			dyn_ltree[END_BLOCK * 2] = 1;
-			that.opt_len = that.static_len = 0;
-			last_lit = matches = 0;
-		}
-
-		// Initialize the tree data structures for a new zlib stream.
-		function tr_init() {
-
-			l_desc.dyn_tree = dyn_ltree;
-			l_desc.stat_desc = StaticTree.static_l_desc;
-
-			d_desc.dyn_tree = dyn_dtree;
-			d_desc.stat_desc = StaticTree.static_d_desc;
-
-			bl_desc.dyn_tree = bl_tree;
-			bl_desc.stat_desc = StaticTree.static_bl_desc;
-
-			bi_buf = 0;
-			bi_valid = 0;
-			last_eob_len = 8; // enough lookahead for inflate
-
-			// Initialize the first block of the first file:
-			init_block();
-		}
-
-		// Restore the heap property by moving down the tree starting at node k,
-		// exchanging a node with the smallest of its two sons if necessary,
-		// stopping
-		// when the heap property is re-established (each father smaller than its
-		// two sons).
-		that.pqdownheap = function (tree, // the tree to restore
-			k // node to move down
-		) {
-			const heap = that.heap;
-			const v = heap[k];
-			let j = k << 1; // left son of k
-			while (j <= that.heap_len) {
-				// Set j to the smallest of the two sons:
-				if (j < that.heap_len && smaller(tree, heap[j + 1], heap[j], that.depth)) {
-					j++;
-				}
-				// Exit if v is smaller than both sons
-				if (smaller(tree, v, heap[j], that.depth))
-					break;
-
-				// Exchange v with the smallest son
-				heap[k] = heap[j];
-				k = j;
-				// And continue down the tree, setting j to the left son of k
-				j <<= 1;
-			}
-			heap[k] = v;
-		};
-
-		// Scan a literal or distance tree to determine the frequencies of the codes
-		// in the bit length tree.
-		function scan_tree(tree,// the tree to be scanned
-			max_code // and its largest code of non zero frequency
-		) {
-			let prevlen = -1; // last emitted length
-			let curlen; // length of current code
-			let nextlen = tree[0 * 2 + 1]; // length of next code
-			let count = 0; // repeat count of the current code
-			let max_count = 7; // max repeat count
-			let min_count = 4; // min repeat count
-
-			if (nextlen === 0) {
-				max_count = 138;
-				min_count = 3;
-			}
-			tree[(max_code + 1) * 2 + 1] = 0xffff; // guard
-
-			for (let n = 0; n <= max_code; n++) {
-				curlen = nextlen;
-				nextlen = tree[(n + 1) * 2 + 1];
-				if (++count < max_count && curlen == nextlen) {
-					continue;
-				} else if (count < min_count) {
-					bl_tree[curlen * 2] += count;
-				} else if (curlen !== 0) {
-					if (curlen != prevlen)
-						bl_tree[curlen * 2]++;
-					bl_tree[REP_3_6 * 2]++;
-				} else if (count <= 10) {
-					bl_tree[REPZ_3_10 * 2]++;
-				} else {
-					bl_tree[REPZ_11_138 * 2]++;
-				}
-				count = 0;
-				prevlen = curlen;
-				if (nextlen === 0) {
-					max_count = 138;
-					min_count = 3;
-				} else if (curlen == nextlen) {
-					max_count = 6;
-					min_count = 3;
-				} else {
-					max_count = 7;
-					min_count = 4;
-				}
-			}
-		}
-
-		// Construct the Huffman tree for the bit lengths and return the index in
-		// bl_order of the last bit length code to send.
-		function build_bl_tree() {
-			let max_blindex; // index of last bit length code of non zero freq
-
-			// Determine the bit length frequencies for literal and distance trees
-			scan_tree(dyn_ltree, l_desc.max_code);
-			scan_tree(dyn_dtree, d_desc.max_code);
-
-			// Build the bit length tree:
-			bl_desc.build_tree(that);
-			// opt_len now includes the length of the tree representations, except
-			// the lengths of the bit lengths codes and the 5+5+4 bits for the
-			// counts.
-
-			// Determine the number of bit length codes to send. The pkzip format
-			// requires that at least 4 bit length codes be sent. (appnote.txt says
-			// 3 but the actual value used is 4.)
-			for (max_blindex = BL_CODES - 1; max_blindex >= 3; max_blindex--) {
-				if (bl_tree[Tree.bl_order[max_blindex] * 2 + 1] !== 0)
-					break;
-			}
-			// Update opt_len to include the bit length tree and counts
-			that.opt_len += 3 * (max_blindex + 1) + 5 + 5 + 4;
-
-			return max_blindex;
-		}
-
-		// Output a byte on the stream.
-		// IN assertion: there is enough room in pending_buf.
-		function put_byte(p) {
-			that.pending_buf[that.pending++] = p;
-		}
-
-		function put_short(w) {
-			put_byte(w & 0xff);
-			put_byte((w >>> 8) & 0xff);
-		}
-
-		function putShortMSB(b) {
-			put_byte((b >> 8) & 0xff);
-			put_byte((b & 0xff) & 0xff);
-		}
-
-		function send_bits(value, length) {
-			let val;
-			const len = length;
-			if (bi_valid > Buf_size - len) {
-				val = value;
-				// bi_buf |= (val << bi_valid);
-				bi_buf |= ((val << bi_valid) & 0xffff);
-				put_short(bi_buf);
-				bi_buf = val >>> (Buf_size - bi_valid);
-				bi_valid += len - Buf_size;
-			} else {
-				// bi_buf |= (value) << bi_valid;
-				bi_buf |= (((value) << bi_valid) & 0xffff);
-				bi_valid += len;
-			}
-		}
-
-		function send_code(c, tree) {
-			const c2 = c * 2;
-			send_bits(tree[c2] & 0xffff, tree[c2 + 1] & 0xffff);
-		}
-
-		// Send a literal or distance tree in compressed form, using the codes in
-		// bl_tree.
-		function send_tree(tree,// the tree to be sent
-			max_code // and its largest code of non zero frequency
-		) {
-			let n; // iterates over all tree elements
-			let prevlen = -1; // last emitted length
-			let curlen; // length of current code
-			let nextlen = tree[0 * 2 + 1]; // length of next code
-			let count = 0; // repeat count of the current code
-			let max_count = 7; // max repeat count
-			let min_count = 4; // min repeat count
-
-			if (nextlen === 0) {
-				max_count = 138;
-				min_count = 3;
-			}
-
-			for (n = 0; n <= max_code; n++) {
-				curlen = nextlen;
-				nextlen = tree[(n + 1) * 2 + 1];
-				if (++count < max_count && curlen == nextlen) {
-					continue;
-				} else if (count < min_count) {
-					do {
-						send_code(curlen, bl_tree);
-					} while (--count !== 0);
-				} else if (curlen !== 0) {
-					if (curlen != prevlen) {
-						send_code(curlen, bl_tree);
-						count--;
-					}
-					send_code(REP_3_6, bl_tree);
-					send_bits(count - 3, 2);
-				} else if (count <= 10) {
-					send_code(REPZ_3_10, bl_tree);
-					send_bits(count - 3, 3);
-				} else {
-					send_code(REPZ_11_138, bl_tree);
-					send_bits(count - 11, 7);
-				}
-				count = 0;
-				prevlen = curlen;
-				if (nextlen === 0) {
-					max_count = 138;
-					min_count = 3;
-				} else if (curlen == nextlen) {
-					max_count = 6;
-					min_count = 3;
-				} else {
-					max_count = 7;
-					min_count = 4;
-				}
-			}
-		}
-
-		// Send the header for a block using dynamic Huffman trees: the counts, the
-		// lengths of the bit length codes, the literal tree and the distance tree.
-		// IN assertion: lcodes >= 257, dcodes >= 1, blcodes >= 4.
-		function send_all_trees(lcodes, dcodes, blcodes) {
-			let rank; // index in bl_order
-
-			send_bits(lcodes - 257, 5); // not +255 as stated in appnote.txt
-			send_bits(dcodes - 1, 5);
-			send_bits(blcodes - 4, 4); // not -3 as stated in appnote.txt
-			for (rank = 0; rank < blcodes; rank++) {
-				send_bits(bl_tree[Tree.bl_order[rank] * 2 + 1], 3);
-			}
-			send_tree(dyn_ltree, lcodes - 1); // literal tree
-			send_tree(dyn_dtree, dcodes - 1); // distance tree
-		}
-
-		// Flush the bit buffer, keeping at most 7 bits in it.
-		function bi_flush() {
-			if (bi_valid == 16) {
-				put_short(bi_buf);
-				bi_buf = 0;
-				bi_valid = 0;
-			} else if (bi_valid >= 8) {
-				put_byte(bi_buf & 0xff);
-				bi_buf >>>= 8;
-				bi_valid -= 8;
-			}
-		}
-
-		// Send one empty static block to give enough lookahead for inflate.
-		// This takes 10 bits, of which 7 may remain in the bit buffer.
-		// The current inflate code requires 9 bits of lookahead. If the
-		// last two codes for the previous block (real code plus EOB) were coded
-		// on 5 bits or less, inflate may have only 5+3 bits of lookahead to decode
-		// the last real code. In this case we send two empty static blocks instead
-		// of one. (There are no problems if the previous block is stored or fixed.)
-		// To simplify the code, we assume the worst case of last real code encoded
-		// on one bit only.
-		function _tr_align() {
-			send_bits(STATIC_TREES << 1, 3);
-			send_code(END_BLOCK, StaticTree.static_ltree);
-
-			bi_flush();
-
-			// Of the 10 bits for the empty block, we have already sent
-			// (10 - bi_valid) bits. The lookahead for the last real code (before
-			// the EOB of the previous block) was thus at least one plus the length
-			// of the EOB plus what we have just sent of the empty static block.
-			if (1 + last_eob_len + 10 - bi_valid < 9) {
-				send_bits(STATIC_TREES << 1, 3);
-				send_code(END_BLOCK, StaticTree.static_ltree);
-				bi_flush();
-			}
-			last_eob_len = 7;
-		}
-
-		// Save the match info and tally the frequency counts. Return true if
-		// the current block must be flushed.
-		function _tr_tally(dist, // distance of matched string
-			lc // match length-MIN_MATCH or unmatched char (if dist==0)
-		) {
-			let out_length, in_length, dcode;
-			that.dist_buf[last_lit] = dist;
-			that.lc_buf[last_lit] = lc & 0xff;
-			last_lit++;
-
-			if (dist === 0) {
-				// lc is the unmatched char
-				dyn_ltree[lc * 2]++;
-			} else {
-				matches++;
-				// Here, lc is the match length - MIN_MATCH
-				dist--; // dist = match distance - 1
-				dyn_ltree[(Tree._length_code[lc] + LITERALS + 1) * 2]++;
-				dyn_dtree[Tree.d_code(dist) * 2]++;
-			}
-
-			if ((last_lit & 0x1fff) === 0 && level > 2) {
-				// Compute an upper bound for the compressed length
-				out_length = last_lit * 8;
-				in_length = strstart - block_start;
-				for (dcode = 0; dcode < D_CODES; dcode++) {
-					out_length += dyn_dtree[dcode * 2] * (5 + Tree.extra_dbits[dcode]);
-				}
-				out_length >>>= 3;
-				if ((matches < Math.floor(last_lit / 2)) && out_length < Math.floor(in_length / 2))
-					return true;
-			}
-
-			return (last_lit == lit_bufsize - 1);
-			// We avoid equality with lit_bufsize because of wraparound at 64K
-			// on 16 bit machines and because stored blocks are restricted to
-			// 64K-1 bytes.
-		}
-
-		// Send the block data compressed using the given Huffman trees
-		function compress_block(ltree, dtree) {
-			let dist; // distance of matched string
-			let lc; // match length or unmatched char (if dist === 0)
-			let lx = 0; // running index in dist_buf and lc_buf
-			let code; // the code to send
-			let extra; // number of extra bits to send
-
-			if (last_lit !== 0) {
-				do {
-					dist = that.dist_buf[lx];
-					lc = that.lc_buf[lx];
-					lx++;
-
-					if (dist === 0) {
-						send_code(lc, ltree); // send a literal byte
-					} else {
-						// Here, lc is the match length - MIN_MATCH
-						code = Tree._length_code[lc];
-
-						send_code(code + LITERALS + 1, ltree); // send the length
-						// code
-						extra = Tree.extra_lbits[code];
-						if (extra !== 0) {
-							lc -= Tree.base_length[code];
-							send_bits(lc, extra); // send the extra length bits
-						}
-						dist--; // dist is now the match distance - 1
-						code = Tree.d_code(dist);
-
-						send_code(code, dtree); // send the distance code
-						extra = Tree.extra_dbits[code];
-						if (extra !== 0) {
-							dist -= Tree.base_dist[code];
-							send_bits(dist, extra); // send the extra distance bits
-						}
-					} // literal or match pair ?
-				} while (lx < last_lit);
-			}
-
-			send_code(END_BLOCK, ltree);
-			last_eob_len = ltree[END_BLOCK * 2 + 1];
-		}
-
-		// Flush the bit buffer and align the output on a byte boundary
-		function bi_windup() {
-			if (bi_valid > 8) {
-				put_short(bi_buf);
-			} else if (bi_valid > 0) {
-				put_byte(bi_buf & 0xff);
-			}
-			bi_buf = 0;
-			bi_valid = 0;
-		}
-
-		// Copy a stored block, storing first the length and its
-		// one's complement if requested.
-		function copy_block(buf, // the input data
-			len, // its length
-			header // true if block header must be written
-		) {
-			bi_windup(); // align on byte boundary
-			last_eob_len = 8; // enough lookahead for inflate
-
-			if (header) {
-				put_short(len);
-				put_short(~len);
-			}
-
-			that.pending_buf.set(win.subarray(buf, buf + len), that.pending);
-			that.pending += len;
-		}
-
-		// Send a stored block
-		function _tr_stored_block(buf, // input block
-			stored_len, // length of input block
-			eof // true if this is the last block for a file
-		) {
-			send_bits((STORED_BLOCK << 1) + (eof ? 1 : 0), 3); // send block type
-			copy_block(buf, stored_len, true); // with header
-		}
-
-		// Determine the best encoding for the current block: dynamic trees, static
-		// trees or store, and output the encoded block to the zip file.
-		function _tr_flush_block(buf, // input block, or NULL if too old
-			stored_len, // length of input block
-			eof // true if this is the last block for a file
-		) {
-			let opt_lenb, static_lenb;// opt_len and static_len in bytes
-			let max_blindex = 0; // index of last bit length code of non zero freq
-
-			// Build the Huffman trees unless a stored block is forced
-			if (level > 0) {
-				// Construct the literal and distance trees
-				l_desc.build_tree(that);
-
-				d_desc.build_tree(that);
-
-				// At this point, opt_len and static_len are the total bit lengths
-				// of
-				// the compressed block data, excluding the tree representations.
-
-				// Build the bit length tree for the above two trees, and get the
-				// index
-				// in bl_order of the last bit length code to send.
-				max_blindex = build_bl_tree();
-
-				// Determine the best encoding. Compute first the block length in
-				// bytes
-				opt_lenb = (that.opt_len + 3 + 7) >>> 3;
-				static_lenb = (that.static_len + 3 + 7) >>> 3;
-
-				if (static_lenb <= opt_lenb)
-					opt_lenb = static_lenb;
-			} else {
-				opt_lenb = static_lenb = stored_len + 5; // force a stored block
-			}
-
-			if ((stored_len + 4 <= opt_lenb) && buf != -1) {
-				// 4: two words for the lengths
-				// The test buf != NULL is only necessary if LIT_BUFSIZE > WSIZE.
-				// Otherwise we can't have processed more than WSIZE input bytes
-				// since
-				// the last block flush, because compression would have been
-				// successful. If LIT_BUFSIZE <= WSIZE, it is never too late to
-				// transform a block into a stored block.
-				_tr_stored_block(buf, stored_len, eof);
-			} else if (static_lenb == opt_lenb) {
-				send_bits((STATIC_TREES << 1) + (eof ? 1 : 0), 3);
-				compress_block(StaticTree.static_ltree, StaticTree.static_dtree);
-			} else {
-				send_bits((DYN_TREES << 1) + (eof ? 1 : 0), 3);
-				send_all_trees(l_desc.max_code + 1, d_desc.max_code + 1, max_blindex + 1);
-				compress_block(dyn_ltree, dyn_dtree);
-			}
-
-			// The above check is made mod 2^32, for files larger than 512 MB
-			// and uLong implemented on 32 bits.
-
-			init_block();
-
-			if (eof) {
-				bi_windup();
-			}
-		}
-
-		function flush_block_only(eof) {
-			_tr_flush_block(block_start >= 0 ? block_start : -1, strstart - block_start, eof);
-			block_start = strstart;
-			strm.flush_pending();
-		}
-
-		// Fill the win when the lookahead becomes insufficient.
-		// Updates strstart and lookahead.
-		//
-		// IN assertion: lookahead < MIN_LOOKAHEAD
-		// OUT assertions: strstart <= window_size-MIN_LOOKAHEAD
-		// At least one byte has been read, or avail_in === 0; reads are
-		// performed for at least two bytes (required for the zip translate_eol
-		// option -- not supported here).
-		function fill_window() {
-			let n, m;
-			let p;
-			let more; // Amount of free space at the end of the win.
-
-			do {
-				more = (window_size - lookahead - strstart);
-
-				// Deal with !@#$% 64K limit:
-				if (more === 0 && strstart === 0 && lookahead === 0) {
-					more = w_size;
-				} else if (more == -1) {
-					// Very unlikely, but possible on 16 bit machine if strstart ==
-					// 0
-					// and lookahead == 1 (input done one byte at time)
-					more--;
-
-					// If the win is almost full and there is insufficient
-					// lookahead,
-					// move the upper half to the lower one to make room in the
-					// upper half.
-				} else if (strstart >= w_size + w_size - MIN_LOOKAHEAD) {
-					win.set(win.subarray(w_size, w_size + w_size), 0);
-
-					match_start -= w_size;
-					strstart -= w_size; // we now have strstart >= MAX_DIST
-					block_start -= w_size;
-
-					// Slide the hash table (could be avoided with 32 bit values
-					// at the expense of memory usage). We slide even when level ==
-					// 0
-					// to keep the hash table consistent if we switch back to level
-					// > 0
-					// later. (Using level 0 permanently is not an optimal usage of
-					// zlib, so we don't care about this pathological case.)
-
-					n = hash_size;
-					p = n;
-					do {
-						m = (head[--p] & 0xffff);
-						head[p] = (m >= w_size ? m - w_size : 0);
-					} while (--n !== 0);
-
-					n = w_size;
-					p = n;
-					do {
-						m = (prev[--p] & 0xffff);
-						prev[p] = (m >= w_size ? m - w_size : 0);
-						// If n is not on any hash chain, prev[n] is garbage but
-						// its value will never be used.
-					} while (--n !== 0);
-					more += w_size;
-				}
-
-				if (strm.avail_in === 0)
-					return;
-
-				// If there was no sliding:
-				// strstart <= WSIZE+MAX_DIST-1 && lookahead <= MIN_LOOKAHEAD - 1 &&
-				// more == window_size - lookahead - strstart
-				// => more >= window_size - (MIN_LOOKAHEAD-1 + WSIZE + MAX_DIST-1)
-				// => more >= window_size - 2*WSIZE + 2
-				// In the BIG_MEM or MMAP case (not yet supported),
-				// window_size == input_size + MIN_LOOKAHEAD &&
-				// strstart + s->lookahead <= input_size => more >= MIN_LOOKAHEAD.
-				// Otherwise, window_size == 2*WSIZE so more >= 2.
-				// If there was sliding, more >= WSIZE. So in all cases, more >= 2.
-
-				n = strm.read_buf(win, strstart + lookahead, more);
-				lookahead += n;
-
-				// Initialize the hash value now that we have some input:
-				if (lookahead >= MIN_MATCH) {
-					ins_h = win[strstart] & 0xff;
-					ins_h = (((ins_h) << hash_shift) ^ (win[strstart + 1] & 0xff)) & hash_mask;
-				}
-				// If the whole input has less than MIN_MATCH bytes, ins_h is
-				// garbage,
-				// but this is not important since only literal bytes will be
-				// emitted.
-			} while (lookahead < MIN_LOOKAHEAD && strm.avail_in !== 0);
-		}
-
-		// Copy without compression as much as possible from the input stream,
-		// return
-		// the current block state.
-		// This function does not insert new strings in the dictionary since
-		// uncompressible data is probably not useful. This function is used
-		// only for the level=0 compression option.
-		// NOTE: this function should be optimized to avoid extra copying from
-		// win to pending_buf.
-		function deflate_stored(flush) {
-			// Stored blocks are limited to 0xffff bytes, pending_buf is limited
-			// to pending_buf_size, and each stored block has a 5 byte header:
-
-			let max_block_size = 0xffff;
-			let max_start;
-
-			if (max_block_size > pending_buf_size - 5) {
-				max_block_size = pending_buf_size - 5;
-			}
-
-			// Copy as much as possible from input to output:
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				// Fill the win as much as possible:
-				if (lookahead <= 1) {
-					fill_window();
-					if (lookahead === 0 && flush == Z_NO_FLUSH)
-						return NeedMore;
-					if (lookahead === 0)
-						break; // flush the current block
-				}
-
-				strstart += lookahead;
-				lookahead = 0;
-
-				// Emit a stored block if pending_buf will be full:
-				max_start = block_start + max_block_size;
-				if (strstart === 0 || strstart >= max_start) {
-					// strstart === 0 is possible when wraparound on 16-bit machine
-					lookahead = (strstart - max_start);
-					strstart = max_start;
-
-					flush_block_only(false);
-					if (strm.avail_out === 0)
-						return NeedMore;
-
-				}
-
-				// Flush if we may have to slide, otherwise block_start may become
-				// negative and the data will be gone:
-				if (strstart - block_start >= w_size - MIN_LOOKAHEAD) {
-					flush_block_only(false);
-					if (strm.avail_out === 0)
-						return NeedMore;
-				}
-			}
-
-			flush_block_only(flush == Z_FINISH);
-			if (strm.avail_out === 0)
-				return (flush == Z_FINISH) ? FinishStarted : NeedMore;
-
-			return flush == Z_FINISH ? FinishDone : BlockDone;
-		}
-
-		function longest_match(cur_match) {
-			let chain_length = max_chain_length; // max hash chain length
-			let scan = strstart; // current string
-			let match; // matched string
-			let len; // length of current match
-			let best_len = prev_length; // best match length so far
-			const limit = strstart > (w_size - MIN_LOOKAHEAD) ? strstart - (w_size - MIN_LOOKAHEAD) : 0;
-			let _nice_match = nice_match;
-
-			// Stop when cur_match becomes <= limit. To simplify the code,
-			// we prevent matches with the string of win index 0.
-
-			const wmask = w_mask;
-
-			const strend = strstart + MAX_MATCH;
-			let scan_end1 = win[scan + best_len - 1];
-			let scan_end = win[scan + best_len];
-
-			// The code is optimized for HASH_BITS >= 8 and MAX_MATCH-2 multiple of
-			// 16.
-			// It is easy to get rid of this optimization if necessary.
-
-			// Do not waste too much time if we already have a good match:
-			if (prev_length >= good_match) {
-				chain_length >>= 2;
-			}
-
-			// Do not look for matches beyond the end of the input. This is
-			// necessary
-			// to make deflate deterministic.
-			if (_nice_match > lookahead)
-				_nice_match = lookahead;
-
-			do {
-				match = cur_match;
-
-				// Skip to next match if the match length cannot increase
-				// or if the match length is less than 2:
-				if (win[match + best_len] != scan_end || win[match + best_len - 1] != scan_end1 || win[match] != win[scan]
-					|| win[++match] != win[scan + 1])
-					continue;
-
-				// The check at best_len-1 can be removed because it will be made
-				// again later. (This heuristic is not always a win.)
-				// It is not necessary to compare scan[2] and match[2] since they
-				// are always equal when the other bytes match, given that
-				// the hash keys are equal and that HASH_BITS >= 8.
-				scan += 2;
-				match++;
-
-				// We check for insufficient lookahead only every 8th comparison;
-				// the 256th check will be made at strstart+258.
-				// eslint-disable-next-line no-empty
-				do {
-					// empty block
-				} while (win[++scan] == win[++match] && win[++scan] == win[++match] && win[++scan] == win[++match]
-				&& win[++scan] == win[++match] && win[++scan] == win[++match] && win[++scan] == win[++match]
-				&& win[++scan] == win[++match] && win[++scan] == win[++match] && scan < strend);
-
-				len = MAX_MATCH - (strend - scan);
-				scan = strend - MAX_MATCH;
-
-				if (len > best_len) {
-					match_start = cur_match;
-					best_len = len;
-					if (len >= _nice_match)
-						break;
-					scan_end1 = win[scan + best_len - 1];
-					scan_end = win[scan + best_len];
-				}
-
-			} while ((cur_match = (prev[cur_match & wmask] & 0xffff)) > limit && --chain_length !== 0);
-
-			if (best_len <= lookahead)
-				return best_len;
-			return lookahead;
-		}
-
-		// Compress as much as possible from the input stream, return the current
-		// block state.
-		// This function does not perform lazy evaluation of matches and inserts
-		// new strings in the dictionary only for unmatched strings or for short
-		// matches. It is used only for the fast compression options.
-		function deflate_fast(flush) {
-			// short hash_head = 0; // head of the hash chain
-			let hash_head = 0; // head of the hash chain
-			let bflush; // set if current block must be flushed
-
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				// Make sure that we always have enough lookahead, except
-				// at the end of the input file. We need MAX_MATCH bytes
-				// for the next match, plus MIN_MATCH bytes to insert the
-				// string following the next match.
-				if (lookahead < MIN_LOOKAHEAD) {
-					fill_window();
-					if (lookahead < MIN_LOOKAHEAD && flush == Z_NO_FLUSH) {
-						return NeedMore;
-					}
-					if (lookahead === 0)
-						break; // flush the current block
-				}
-
-				// Insert the string win[strstart .. strstart+2] in the
-				// dictionary, and set hash_head to the head of the hash chain:
-				if (lookahead >= MIN_MATCH) {
-					ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
-
-					// prev[strstart&w_mask]=hash_head=head[ins_h];
-					hash_head = (head[ins_h] & 0xffff);
-					prev[strstart & w_mask] = head[ins_h];
-					head[ins_h] = strstart;
-				}
-
-				// Find the longest match, discarding those <= prev_length.
-				// At this point we have always match_length < MIN_MATCH
-
-				if (hash_head !== 0 && ((strstart - hash_head) & 0xffff) <= w_size - MIN_LOOKAHEAD) {
-					// To simplify the code, we prevent matches with the string
-					// of win index 0 (in particular we have to avoid a match
-					// of the string with itself at the start of the input file).
-					if (strategy != Z_HUFFMAN_ONLY) {
-						match_length = longest_match(hash_head);
-					}
-					// longest_match() sets match_start
-				}
-				if (match_length >= MIN_MATCH) {
-					// check_match(strstart, match_start, match_length);
-
-					bflush = _tr_tally(strstart - match_start, match_length - MIN_MATCH);
-
-					lookahead -= match_length;
-
-					// Insert new strings in the hash table only if the match length
-					// is not too large. This saves time but degrades compression.
-					if (match_length <= max_lazy_match && lookahead >= MIN_MATCH) {
-						match_length--; // string at strstart already in hash table
-						do {
-							strstart++;
-
-							ins_h = ((ins_h << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
-							// prev[strstart&w_mask]=hash_head=head[ins_h];
-							hash_head = (head[ins_h] & 0xffff);
-							prev[strstart & w_mask] = head[ins_h];
-							head[ins_h] = strstart;
-
-							// strstart never exceeds WSIZE-MAX_MATCH, so there are
-							// always MIN_MATCH bytes ahead.
-						} while (--match_length !== 0);
-						strstart++;
-					} else {
-						strstart += match_length;
-						match_length = 0;
-						ins_h = win[strstart] & 0xff;
-
-						ins_h = (((ins_h) << hash_shift) ^ (win[strstart + 1] & 0xff)) & hash_mask;
-						// If lookahead < MIN_MATCH, ins_h is garbage, but it does
-						// not
-						// matter since it will be recomputed at next deflate call.
-					}
-				} else {
-					// No match, output a literal byte
-
-					bflush = _tr_tally(0, win[strstart] & 0xff);
-					lookahead--;
-					strstart++;
-				}
-				if (bflush) {
-
-					flush_block_only(false);
-					if (strm.avail_out === 0)
-						return NeedMore;
-				}
-			}
-
-			flush_block_only(flush == Z_FINISH);
-			if (strm.avail_out === 0) {
-				if (flush == Z_FINISH)
-					return FinishStarted;
-				else
-					return NeedMore;
-			}
-			return flush == Z_FINISH ? FinishDone : BlockDone;
-		}
-
-		// Same as above, but achieves better compression. We use a lazy
-		// evaluation for matches: a match is finally adopted only if there is
-		// no better match at the next win position.
-		function deflate_slow(flush) {
-			// short hash_head = 0; // head of hash chain
-			let hash_head = 0; // head of hash chain
-			let bflush; // set if current block must be flushed
-			let max_insert;
-
-			// Process the input block.
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				// Make sure that we always have enough lookahead, except
-				// at the end of the input file. We need MAX_MATCH bytes
-				// for the next match, plus MIN_MATCH bytes to insert the
-				// string following the next match.
-
-				if (lookahead < MIN_LOOKAHEAD) {
-					fill_window();
-					if (lookahead < MIN_LOOKAHEAD && flush == Z_NO_FLUSH) {
-						return NeedMore;
-					}
-					if (lookahead === 0)
-						break; // flush the current block
-				}
-
-				// Insert the string win[strstart .. strstart+2] in the
-				// dictionary, and set hash_head to the head of the hash chain:
-
-				if (lookahead >= MIN_MATCH) {
-					ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
-					// prev[strstart&w_mask]=hash_head=head[ins_h];
-					hash_head = (head[ins_h] & 0xffff);
-					prev[strstart & w_mask] = head[ins_h];
-					head[ins_h] = strstart;
-				}
-
-				// Find the longest match, discarding those <= prev_length.
-				prev_length = match_length;
-				prev_match = match_start;
-				match_length = MIN_MATCH - 1;
-
-				if (hash_head !== 0 && prev_length < max_lazy_match && ((strstart - hash_head) & 0xffff) <= w_size - MIN_LOOKAHEAD) {
-					// To simplify the code, we prevent matches with the string
-					// of win index 0 (in particular we have to avoid a match
-					// of the string with itself at the start of the input file).
-
-					if (strategy != Z_HUFFMAN_ONLY) {
-						match_length = longest_match(hash_head);
-					}
-					// longest_match() sets match_start
-
-					if (match_length <= 5 && (strategy == Z_FILTERED || (match_length == MIN_MATCH && strstart - match_start > 4096))) {
-
-						// If prev_match is also MIN_MATCH, match_start is garbage
-						// but we will ignore the current match anyway.
-						match_length = MIN_MATCH - 1;
-					}
-				}
-
-				// If there was a match at the previous step and the current
-				// match is not better, output the previous match:
-				if (prev_length >= MIN_MATCH && match_length <= prev_length) {
-					max_insert = strstart + lookahead - MIN_MATCH;
-					// Do not insert strings in hash table beyond this.
-
-					// check_match(strstart-1, prev_match, prev_length);
-
-					bflush = _tr_tally(strstart - 1 - prev_match, prev_length - MIN_MATCH);
-
-					// Insert in hash table all strings up to the end of the match.
-					// strstart-1 and strstart are already inserted. If there is not
-					// enough lookahead, the last two strings are not inserted in
-					// the hash table.
-					lookahead -= prev_length - 1;
-					prev_length -= 2;
-					do {
-						if (++strstart <= max_insert) {
-							ins_h = (((ins_h) << hash_shift) ^ (win[(strstart) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
-							// prev[strstart&w_mask]=hash_head=head[ins_h];
-							hash_head = (head[ins_h] & 0xffff);
-							prev[strstart & w_mask] = head[ins_h];
-							head[ins_h] = strstart;
-						}
-					} while (--prev_length !== 0);
-					match_available = 0;
-					match_length = MIN_MATCH - 1;
-					strstart++;
-
-					if (bflush) {
-						flush_block_only(false);
-						if (strm.avail_out === 0)
-							return NeedMore;
-					}
-				} else if (match_available !== 0) {
-
-					// If there was no match at the previous position, output a
-					// single literal. If there was a match but the current match
-					// is longer, truncate the previous match to a single literal.
-
-					bflush = _tr_tally(0, win[strstart - 1] & 0xff);
-
-					if (bflush) {
-						flush_block_only(false);
-					}
-					strstart++;
-					lookahead--;
-					if (strm.avail_out === 0)
-						return NeedMore;
-				} else {
-					// There is no previous match to compare with, wait for
-					// the next step to decide.
-
-					match_available = 1;
-					strstart++;
-					lookahead--;
-				}
-			}
-
-			if (match_available !== 0) {
-				bflush = _tr_tally(0, win[strstart - 1] & 0xff);
-				match_available = 0;
-			}
-			flush_block_only(flush == Z_FINISH);
-
-			if (strm.avail_out === 0) {
-				if (flush == Z_FINISH)
-					return FinishStarted;
-				else
-					return NeedMore;
-			}
-
-			return flush == Z_FINISH ? FinishDone : BlockDone;
-		}
-
-		function deflateReset(strm) {
-			strm.total_in = strm.total_out = 0;
-			strm.msg = null; //
-
-			that.pending = 0;
-			that.pending_out = 0;
-
-			status = BUSY_STATE;
-
-			last_flush = Z_NO_FLUSH;
-
-			tr_init();
-			lm_init();
-			return Z_OK;
-		}
-
-		that.deflateInit = function (strm, _level, bits, _method, memLevel, _strategy) {
-			if (!_method)
-				_method = Z_DEFLATED;
-			if (!memLevel)
-				memLevel = DEF_MEM_LEVEL;
-			if (!_strategy)
-				_strategy = Z_DEFAULT_STRATEGY;
-
-			// byte[] my_version=ZLIB_VERSION;
-
-			//
-			// if (!version || version[0] != my_version[0]
-			// || stream_size != sizeof(z_stream)) {
-			// return Z_VERSION_ERROR;
-			// }
-
-			strm.msg = null;
-
-			if (_level == Z_DEFAULT_COMPRESSION)
-				_level = 6;
-
-			if (memLevel < 1 || memLevel > MAX_MEM_LEVEL || _method != Z_DEFLATED || bits < 9 || bits > 15 || _level < 0 || _level > 9 || _strategy < 0
-				|| _strategy > Z_HUFFMAN_ONLY) {
-				return Z_STREAM_ERROR;
-			}
-
-			strm.dstate = that;
-
-			w_bits = bits;
-			w_size = 1 << w_bits;
-			w_mask = w_size - 1;
-
-			hash_bits = memLevel + 7;
-			hash_size = 1 << hash_bits;
-			hash_mask = hash_size - 1;
-			hash_shift = Math.floor((hash_bits + MIN_MATCH - 1) / MIN_MATCH);
-
-			win = new Uint8Array(w_size * 2);
-			prev = [];
-			head = [];
-
-			lit_bufsize = 1 << (memLevel + 6); // 16K elements by default
-
-			that.pending_buf = new Uint8Array(lit_bufsize * 4);
-			pending_buf_size = lit_bufsize * 4;
-
-			that.dist_buf = new Uint16Array(lit_bufsize);
-			that.lc_buf = new Uint8Array(lit_bufsize);
-
-			level = _level;
-
-			strategy = _strategy;
-
-			return deflateReset(strm);
-		};
-
-		that.deflateEnd = function () {
-			if (status != INIT_STATE && status != BUSY_STATE && status != FINISH_STATE) {
-				return Z_STREAM_ERROR;
-			}
-			// Deallocate in reverse order of allocations:
-			that.lc_buf = null;
-			that.dist_buf = null;
-			that.pending_buf = null;
-			head = null;
-			prev = null;
-			win = null;
-			// free
-			that.dstate = null;
-			return status == BUSY_STATE ? Z_DATA_ERROR : Z_OK;
-		};
-
-		that.deflateParams = function (strm, _level, _strategy) {
-			let err = Z_OK;
-
-			if (_level == Z_DEFAULT_COMPRESSION) {
-				_level = 6;
-			}
-			if (_level < 0 || _level > 9 || _strategy < 0 || _strategy > Z_HUFFMAN_ONLY) {
-				return Z_STREAM_ERROR;
-			}
-
-			if (config_table[level].func != config_table[_level].func && strm.total_in !== 0) {
-				// Flush the last buffer:
-				err = strm.deflate(Z_PARTIAL_FLUSH);
-			}
-
-			if (level != _level) {
-				level = _level;
-				max_lazy_match = config_table[level].max_lazy;
-				good_match = config_table[level].good_length;
-				nice_match = config_table[level].nice_length;
-				max_chain_length = config_table[level].max_chain;
-			}
-			strategy = _strategy;
-			return err;
-		};
-
-		that.deflateSetDictionary = function (_strm, dictionary, dictLength) {
-			let length = dictLength;
-			let n, index = 0;
-
-			if (!dictionary || status != INIT_STATE)
-				return Z_STREAM_ERROR;
-
-			if (length < MIN_MATCH)
-				return Z_OK;
-			if (length > w_size - MIN_LOOKAHEAD) {
-				length = w_size - MIN_LOOKAHEAD;
-				index = dictLength - length; // use the tail of the dictionary
-			}
-			win.set(dictionary.subarray(index, index + length), 0);
-
-			strstart = length;
-			block_start = length;
-
-			// Insert all strings in the hash table (except for the last two bytes).
-			// s->lookahead stays null, so s->ins_h will be recomputed at the next
-			// call of fill_window.
-
-			ins_h = win[0] & 0xff;
-			ins_h = (((ins_h) << hash_shift) ^ (win[1] & 0xff)) & hash_mask;
-
-			for (n = 0; n <= length - MIN_MATCH; n++) {
-				ins_h = (((ins_h) << hash_shift) ^ (win[(n) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
-				prev[n & w_mask] = head[ins_h];
-				head[ins_h] = n;
-			}
-			return Z_OK;
-		};
-
-		that.deflate = function (_strm, flush) {
-			let i, header, level_flags, old_flush, bstate;
-
-			if (flush > Z_FINISH || flush < 0) {
-				return Z_STREAM_ERROR;
-			}
-
-			if (!_strm.next_out || (!_strm.next_in && _strm.avail_in !== 0) || (status == FINISH_STATE && flush != Z_FINISH)) {
-				_strm.msg = z_errmsg[Z_NEED_DICT - (Z_STREAM_ERROR)];
-				return Z_STREAM_ERROR;
-			}
-			if (_strm.avail_out === 0) {
-				_strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
-				return Z_BUF_ERROR;
-			}
-
-			strm = _strm; // just in case
-			old_flush = last_flush;
-			last_flush = flush;
-
-			// Write the zlib header
-			if (status == INIT_STATE) {
-				header = (Z_DEFLATED + ((w_bits - 8) << 4)) << 8;
-				level_flags = ((level - 1) & 0xff) >> 1;
-
-				if (level_flags > 3)
-					level_flags = 3;
-				header |= (level_flags << 6);
-				if (strstart !== 0)
-					header |= PRESET_DICT;
-				header += 31 - (header % 31);
-
-				status = BUSY_STATE;
-				putShortMSB(header);
-			}
-
-			// Flush as much pending output as possible
-			if (that.pending !== 0) {
-				strm.flush_pending();
-				if (strm.avail_out === 0) {
-					// console.log(" avail_out==0");
-					// Since avail_out is 0, deflate will be called again with
-					// more output space, but possibly with both pending and
-					// avail_in equal to zero. There won't be anything to do,
-					// but this is not an error situation so make sure we
-					// return OK instead of BUF_ERROR at next call of deflate:
-					last_flush = -1;
-					return Z_OK;
-				}
-
-				// Make sure there is something to do and avoid duplicate
-				// consecutive
-				// flushes. For repeated and useless calls with Z_FINISH, we keep
-				// returning Z_STREAM_END instead of Z_BUFF_ERROR.
-			} else if (strm.avail_in === 0 && flush <= old_flush && flush != Z_FINISH) {
-				strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
-				return Z_BUF_ERROR;
-			}
-
-			// User must not provide more input after the first FINISH:
-			if (status == FINISH_STATE && strm.avail_in !== 0) {
-				_strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
-				return Z_BUF_ERROR;
-			}
-
-			// Start a new block or continue the current one.
-			if (strm.avail_in !== 0 || lookahead !== 0 || (flush != Z_NO_FLUSH && status != FINISH_STATE)) {
-				bstate = -1;
-				switch (config_table[level].func) {
-					case STORED:
-						bstate = deflate_stored(flush);
-						break;
-					case FAST:
-						bstate = deflate_fast(flush);
-						break;
-					case SLOW:
-						bstate = deflate_slow(flush);
-						break;
-					default:
-				}
-
-				if (bstate == FinishStarted || bstate == FinishDone) {
-					status = FINISH_STATE;
-				}
-				if (bstate == NeedMore || bstate == FinishStarted) {
-					if (strm.avail_out === 0) {
-						last_flush = -1; // avoid BUF_ERROR next call, see above
-					}
-					return Z_OK;
-					// If flush != Z_NO_FLUSH && avail_out === 0, the next call
-					// of deflate should use the same flush parameter to make sure
-					// that the flush is complete. So we don't have to output an
-					// empty block here, this will be done at next call. This also
-					// ensures that for a very small output buffer, we emit at most
-					// one empty block.
-				}
-
-				if (bstate == BlockDone) {
-					if (flush == Z_PARTIAL_FLUSH) {
-						_tr_align();
-					} else { // FULL_FLUSH or SYNC_FLUSH
-						_tr_stored_block(0, 0, false);
-						// For a full flush, this empty block will be recognized
-						// as a special marker by inflate_sync().
-						if (flush == Z_FULL_FLUSH) {
-							// state.head[s.hash_size-1]=0;
-							for (i = 0; i < hash_size/*-1*/; i++)
-								// forget history
-								head[i] = 0;
-						}
-					}
-					strm.flush_pending();
-					if (strm.avail_out === 0) {
-						last_flush = -1; // avoid BUF_ERROR at next call, see above
-						return Z_OK;
-					}
-				}
-			}
-
-			if (flush != Z_FINISH)
-				return Z_OK;
-			return Z_STREAM_END;
-		};
-	}
-
-	// ZStream
-
-	function ZStream() {
-		const that = this;
-		that.next_in_index = 0;
-		that.next_out_index = 0;
-		// that.next_in; // next input byte
-		that.avail_in = 0; // number of bytes available at next_in
-		that.total_in = 0; // total nb of input bytes read so far
-		// that.next_out; // next output byte should be put there
-		that.avail_out = 0; // remaining free space at next_out
-		that.total_out = 0; // total nb of bytes output so far
-		// that.msg;
-		// that.dstate;
-	}
-
-	ZStream.prototype = {
-		deflateInit: function (level, bits) {
-			const that = this;
-			that.dstate = new Deflate();
-			if (!bits)
-				bits = MAX_BITS;
-			return that.dstate.deflateInit(that, level, bits);
-		},
-
-		deflate: function (flush) {
-			const that = this;
-			if (!that.dstate) {
-				return Z_STREAM_ERROR;
-			}
-			return that.dstate.deflate(that, flush);
-		},
-
-		deflateEnd: function () {
-			const that = this;
-			if (!that.dstate)
-				return Z_STREAM_ERROR;
-			const ret = that.dstate.deflateEnd();
-			that.dstate = null;
-			return ret;
-		},
-
-		deflateParams: function (level, strategy) {
-			const that = this;
-			if (!that.dstate)
-				return Z_STREAM_ERROR;
-			return that.dstate.deflateParams(that, level, strategy);
-		},
-
-		deflateSetDictionary: function (dictionary, dictLength) {
-			const that = this;
-			if (!that.dstate)
-				return Z_STREAM_ERROR;
-			return that.dstate.deflateSetDictionary(that, dictionary, dictLength);
-		},
-
-		// Read a new buffer from the current input stream, update the
-		// total number of bytes read. All deflate() input goes through
-		// this function so some applications may wish to modify it to avoid
-		// allocating a large strm->next_in buffer and copying from it.
-		// (See also flush_pending()).
-		read_buf: function (buf, start, size) {
-			const that = this;
-			let len = that.avail_in;
-			if (len > size)
-				len = size;
-			if (len === 0)
-				return 0;
-			that.avail_in -= len;
-			buf.set(that.next_in.subarray(that.next_in_index, that.next_in_index + len), start);
-			that.next_in_index += len;
-			that.total_in += len;
-			return len;
-		},
-
-		// Flush as much pending output as possible. All deflate() output goes
-		// through this function so some applications may wish to modify it
-		// to avoid allocating a large strm->next_out buffer and copying into it.
-		// (See also read_buf()).
-		flush_pending: function () {
-			const that = this;
-			let len = that.dstate.pending;
-
-			if (len > that.avail_out)
-				len = that.avail_out;
-			if (len === 0)
-				return;
-
-			// if (that.dstate.pending_buf.length <= that.dstate.pending_out || that.next_out.length <= that.next_out_index
-			// || that.dstate.pending_buf.length < (that.dstate.pending_out + len) || that.next_out.length < (that.next_out_index +
-			// len)) {
-			// console.log(that.dstate.pending_buf.length + ", " + that.dstate.pending_out + ", " + that.next_out.length + ", " +
-			// that.next_out_index + ", " + len);
-			// console.log("avail_out=" + that.avail_out);
-			// }
-
-			that.next_out.set(that.dstate.pending_buf.subarray(that.dstate.pending_out, that.dstate.pending_out + len), that.next_out_index);
-
-			that.next_out_index += len;
-			that.dstate.pending_out += len;
-			that.total_out += len;
-			that.avail_out -= len;
-			that.dstate.pending -= len;
-			if (that.dstate.pending === 0) {
-				that.dstate.pending_out = 0;
-			}
-		}
+		strategy = _strategy;
+		return err;
 	};
 
-	// Deflate
+	that.deflateSetDictionary = function (_strm, dictionary, dictLength) {
+		let length = dictLength;
+		let n, index = 0;
 
-	function ZipDeflate(options) {
-		const that = this;
-		const z = new ZStream();
-		const bufsize = getMaximumCompressedSize(options && options.chunkSize ? options.chunkSize : 64 * 1024);
-		const flush = Z_NO_FLUSH;
-		const buf = new Uint8Array(bufsize);
-		let level = options ? options.level : Z_DEFAULT_COMPRESSION;
-		if (typeof level == "undefined")
-			level = Z_DEFAULT_COMPRESSION;
-		z.deflateInit(level);
-		z.next_out = buf;
+		if (!dictionary || status != INIT_STATE)
+			return Z_STREAM_ERROR;
 
-		that.append = function (data, onprogress) {
-			let err, array, lastIndex = 0, bufferIndex = 0, bufferSize = 0;
-			const buffers = [];
-			if (!data.length)
-				return;
-			z.next_in_index = 0;
-			z.next_in = data;
-			z.avail_in = data.length;
-			do {
-				z.next_out_index = 0;
-				z.avail_out = bufsize;
-				err = z.deflate(flush);
-				if (err != Z_OK)
-					throw new Error("deflating: " + z.msg);
-				if (z.next_out_index)
-					if (z.next_out_index == bufsize)
-						buffers.push(new Uint8Array(buf));
-					else
-						buffers.push(buf.slice(0, z.next_out_index));
-				bufferSize += z.next_out_index;
-				if (onprogress && z.next_in_index > 0 && z.next_in_index != lastIndex) {
-					onprogress(z.next_in_index);
-					lastIndex = z.next_in_index;
-				}
-			} while (z.avail_in > 0 || z.avail_out === 0);
-			if (buffers.length > 1) {
-				array = new Uint8Array(bufferSize);
-				buffers.forEach(function (chunk) {
-					array.set(chunk, bufferIndex);
-					bufferIndex += chunk.length;
-				});
-			} else {
-				array = buffers[0] || new Uint8Array(0);
+		if (length < MIN_MATCH)
+			return Z_OK;
+		if (length > w_size - MIN_LOOKAHEAD) {
+			length = w_size - MIN_LOOKAHEAD;
+			index = dictLength - length; // use the tail of the dictionary
+		}
+		win.set(dictionary.subarray(index, index + length), 0);
+
+		strstart = length;
+		block_start = length;
+
+		// Insert all strings in the hash table (except for the last two bytes).
+		// s->lookahead stays null, so s->ins_h will be recomputed at the next
+		// call of fill_window.
+
+		ins_h = win[0] & 0xff;
+		ins_h = (((ins_h) << hash_shift) ^ (win[1] & 0xff)) & hash_mask;
+
+		for (n = 0; n <= length - MIN_MATCH; n++) {
+			ins_h = (((ins_h) << hash_shift) ^ (win[(n) + (MIN_MATCH - 1)] & 0xff)) & hash_mask;
+			prev[n & w_mask] = head[ins_h];
+			head[ins_h] = n;
+		}
+		return Z_OK;
+	};
+
+	that.deflate = function (_strm, flush) {
+		let i, header, level_flags, old_flush, bstate;
+
+		if (flush > Z_FINISH || flush < 0) {
+			return Z_STREAM_ERROR;
+		}
+
+		if (!_strm.next_out || (!_strm.next_in && _strm.avail_in !== 0) || (status == FINISH_STATE && flush != Z_FINISH)) {
+			_strm.msg = z_errmsg[Z_NEED_DICT - (Z_STREAM_ERROR)];
+			return Z_STREAM_ERROR;
+		}
+		if (_strm.avail_out === 0) {
+			_strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
+			return Z_BUF_ERROR;
+		}
+
+		strm = _strm; // just in case
+		old_flush = last_flush;
+		last_flush = flush;
+
+		// Write the zlib header
+		if (status == INIT_STATE) {
+			header = (Z_DEFLATED + ((w_bits - 8) << 4)) << 8;
+			level_flags = ((level - 1) & 0xff) >> 1;
+
+			if (level_flags > 3)
+				level_flags = 3;
+			header |= (level_flags << 6);
+			if (strstart !== 0)
+				header |= PRESET_DICT;
+			header += 31 - (header % 31);
+
+			status = BUSY_STATE;
+			putShortMSB(header);
+		}
+
+		// Flush as much pending output as possible
+		if (that.pending !== 0) {
+			strm.flush_pending();
+			if (strm.avail_out === 0) {
+				// console.log(" avail_out==0");
+				// Since avail_out is 0, deflate will be called again with
+				// more output space, but possibly with both pending and
+				// avail_in equal to zero. There won't be anything to do,
+				// but this is not an error situation so make sure we
+				// return OK instead of BUF_ERROR at next call of deflate:
+				last_flush = -1;
+				return Z_OK;
 			}
-			return array;
-		};
-		that.flush = function () {
-			let err, array, bufferIndex = 0, bufferSize = 0;
-			const buffers = [];
-			do {
-				z.next_out_index = 0;
-				z.avail_out = bufsize;
-				err = z.deflate(Z_FINISH);
-				if (err != Z_STREAM_END && err != Z_OK)
-					throw new Error("deflating: " + z.msg);
-				if (bufsize - z.avail_out > 0)
+
+			// Make sure there is something to do and avoid duplicate
+			// consecutive
+			// flushes. For repeated and useless calls with Z_FINISH, we keep
+			// returning Z_STREAM_END instead of Z_BUFF_ERROR.
+		} else if (strm.avail_in === 0 && flush <= old_flush && flush != Z_FINISH) {
+			strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
+			return Z_BUF_ERROR;
+		}
+
+		// User must not provide more input after the first FINISH:
+		if (status == FINISH_STATE && strm.avail_in !== 0) {
+			_strm.msg = z_errmsg[Z_NEED_DICT - (Z_BUF_ERROR)];
+			return Z_BUF_ERROR;
+		}
+
+		// Start a new block or continue the current one.
+		if (strm.avail_in !== 0 || lookahead !== 0 || (flush != Z_NO_FLUSH && status != FINISH_STATE)) {
+			bstate = -1;
+			switch (config_table[level].func) {
+				case STORED:
+					bstate = deflate_stored(flush);
+					break;
+				case FAST:
+					bstate = deflate_fast(flush);
+					break;
+				case SLOW:
+					bstate = deflate_slow(flush);
+					break;
+				default:
+			}
+
+			if (bstate == FinishStarted || bstate == FinishDone) {
+				status = FINISH_STATE;
+			}
+			if (bstate == NeedMore || bstate == FinishStarted) {
+				if (strm.avail_out === 0) {
+					last_flush = -1; // avoid BUF_ERROR next call, see above
+				}
+				return Z_OK;
+				// If flush != Z_NO_FLUSH && avail_out === 0, the next call
+				// of deflate should use the same flush parameter to make sure
+				// that the flush is complete. So we don't have to output an
+				// empty block here, this will be done at next call. This also
+				// ensures that for a very small output buffer, we emit at most
+				// one empty block.
+			}
+
+			if (bstate == BlockDone) {
+				if (flush == Z_PARTIAL_FLUSH) {
+					_tr_align();
+				} else { // FULL_FLUSH or SYNC_FLUSH
+					_tr_stored_block(0, 0, false);
+					// For a full flush, this empty block will be recognized
+					// as a special marker by inflate_sync().
+					if (flush == Z_FULL_FLUSH) {
+						// state.head[s.hash_size-1]=0;
+						for (i = 0; i < hash_size/*-1*/; i++)
+							// forget history
+							head[i] = 0;
+					}
+				}
+				strm.flush_pending();
+				if (strm.avail_out === 0) {
+					last_flush = -1; // avoid BUF_ERROR at next call, see above
+					return Z_OK;
+				}
+			}
+		}
+
+		if (flush != Z_FINISH)
+			return Z_OK;
+		return Z_STREAM_END;
+	};
+}
+
+// ZStream
+
+function ZStream() {
+	const that = this;
+	that.next_in_index = 0;
+	that.next_out_index = 0;
+	// that.next_in; // next input byte
+	that.avail_in = 0; // number of bytes available at next_in
+	that.total_in = 0; // total nb of input bytes read so far
+	// that.next_out; // next output byte should be put there
+	that.avail_out = 0; // remaining free space at next_out
+	that.total_out = 0; // total nb of bytes output so far
+	// that.msg;
+	// that.dstate;
+}
+
+ZStream.prototype = {
+	deflateInit: function (level, bits) {
+		const that = this;
+		that.dstate = new Deflate();
+		if (!bits)
+			bits = MAX_BITS;
+		return that.dstate.deflateInit(that, level, bits);
+	},
+
+	deflate: function (flush) {
+		const that = this;
+		if (!that.dstate) {
+			return Z_STREAM_ERROR;
+		}
+		return that.dstate.deflate(that, flush);
+	},
+
+	deflateEnd: function () {
+		const that = this;
+		if (!that.dstate)
+			return Z_STREAM_ERROR;
+		const ret = that.dstate.deflateEnd();
+		that.dstate = null;
+		return ret;
+	},
+
+	deflateParams: function (level, strategy) {
+		const that = this;
+		if (!that.dstate)
+			return Z_STREAM_ERROR;
+		return that.dstate.deflateParams(that, level, strategy);
+	},
+
+	deflateSetDictionary: function (dictionary, dictLength) {
+		const that = this;
+		if (!that.dstate)
+			return Z_STREAM_ERROR;
+		return that.dstate.deflateSetDictionary(that, dictionary, dictLength);
+	},
+
+	// Read a new buffer from the current input stream, update the
+	// total number of bytes read. All deflate() input goes through
+	// this function so some applications may wish to modify it to avoid
+	// allocating a large strm->next_in buffer and copying from it.
+	// (See also flush_pending()).
+	read_buf: function (buf, start, size) {
+		const that = this;
+		let len = that.avail_in;
+		if (len > size)
+			len = size;
+		if (len === 0)
+			return 0;
+		that.avail_in -= len;
+		buf.set(that.next_in.subarray(that.next_in_index, that.next_in_index + len), start);
+		that.next_in_index += len;
+		that.total_in += len;
+		return len;
+	},
+
+	// Flush as much pending output as possible. All deflate() output goes
+	// through this function so some applications may wish to modify it
+	// to avoid allocating a large strm->next_out buffer and copying into it.
+	// (See also read_buf()).
+	flush_pending: function () {
+		const that = this;
+		let len = that.dstate.pending;
+
+		if (len > that.avail_out)
+			len = that.avail_out;
+		if (len === 0)
+			return;
+
+		// if (that.dstate.pending_buf.length <= that.dstate.pending_out || that.next_out.length <= that.next_out_index
+		// || that.dstate.pending_buf.length < (that.dstate.pending_out + len) || that.next_out.length < (that.next_out_index +
+		// len)) {
+		// console.log(that.dstate.pending_buf.length + ", " + that.dstate.pending_out + ", " + that.next_out.length + ", " +
+		// that.next_out_index + ", " + len);
+		// console.log("avail_out=" + that.avail_out);
+		// }
+
+		that.next_out.set(that.dstate.pending_buf.subarray(that.dstate.pending_out, that.dstate.pending_out + len), that.next_out_index);
+
+		that.next_out_index += len;
+		that.dstate.pending_out += len;
+		that.total_out += len;
+		that.avail_out -= len;
+		that.dstate.pending -= len;
+		if (that.dstate.pending === 0) {
+			that.dstate.pending_out = 0;
+		}
+	}
+};
+
+// Deflate
+
+function ZipDeflate(options) {
+	const that = this;
+	const z = new ZStream();
+	const bufsize = getMaximumCompressedSize(options && options.chunkSize ? options.chunkSize : 64 * 1024);
+	const flush = Z_NO_FLUSH;
+	const buf = new Uint8Array(bufsize);
+	let level = options ? options.level : Z_DEFAULT_COMPRESSION;
+	if (typeof level == "undefined")
+		level = Z_DEFAULT_COMPRESSION;
+	z.deflateInit(level);
+	z.next_out = buf;
+
+	that.append = function (data, onprogress) {
+		let err, array, lastIndex = 0, bufferIndex = 0, bufferSize = 0;
+		const buffers = [];
+		if (!data.length)
+			return;
+		z.next_in_index = 0;
+		z.next_in = data;
+		z.avail_in = data.length;
+		do {
+			z.next_out_index = 0;
+			z.avail_out = bufsize;
+			err = z.deflate(flush);
+			if (err != Z_OK)
+				throw new Error("deflating: " + z.msg);
+			if (z.next_out_index)
+				if (z.next_out_index == bufsize)
+					buffers.push(new Uint8Array(buf));
+				else
 					buffers.push(buf.slice(0, z.next_out_index));
-				bufferSize += z.next_out_index;
-			} while (z.avail_in > 0 || z.avail_out === 0);
-			z.deflateEnd();
+			bufferSize += z.next_out_index;
+			if (onprogress && z.next_in_index > 0 && z.next_in_index != lastIndex) {
+				onprogress(z.next_in_index);
+				lastIndex = z.next_in_index;
+			}
+		} while (z.avail_in > 0 || z.avail_out === 0);
+		if (buffers.length > 1) {
 			array = new Uint8Array(bufferSize);
 			buffers.forEach(function (chunk) {
 				array.set(chunk, bufferIndex);
 				bufferIndex += chunk.length;
 			});
-			return array;
-		};
-	}
+		} else {
+			array = buffers[0] || new Uint8Array(0);
+		}
+		return array;
+	};
+	that.flush = function () {
+		let err, array, bufferIndex = 0, bufferSize = 0;
+		const buffers = [];
+		do {
+			z.next_out_index = 0;
+			z.avail_out = bufsize;
+			err = z.deflate(Z_FINISH);
+			if (err != Z_STREAM_END && err != Z_OK)
+				throw new Error("deflating: " + z.msg);
+			if (bufsize - z.avail_out > 0)
+				buffers.push(buf.slice(0, z.next_out_index));
+			bufferSize += z.next_out_index;
+		} while (z.avail_in > 0 || z.avail_out === 0);
+		z.deflateEnd();
+		array = new Uint8Array(bufferSize);
+		buffers.forEach(function (chunk) {
+			array.set(chunk, bufferIndex);
+			bufferIndex += chunk.length;
+		});
+		return array;
+	};
+}
 
-	function getMaximumCompressedSize(uncompressedSize) {
-		return uncompressedSize + (5 * (Math.floor(uncompressedSize / 16383) + 1));
-	}
-
-	return ZipDeflate;
-
-})();
+function getMaximumCompressedSize(uncompressedSize) {
+	return uncompressedSize + (5 * (Math.floor(uncompressedSize / 16383) + 1));
+}
 
 /* harmony default export */ const deflate = (ZipDeflate);
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/inflate.js
@@ -7332,744 +7326,620 @@ const ZipDeflate = (() => {
 // deno-lint-ignore-file no-this-alias prefer-const
 
 // Global
+const inflate_MAX_BITS = 15;
 
-const ZipInflate = (() => {
+const inflate_Z_OK = 0;
+const inflate_Z_STREAM_END = 1;
+const inflate_Z_NEED_DICT = 2;
+const inflate_Z_STREAM_ERROR = -2;
+const inflate_Z_DATA_ERROR = -3;
+const Z_MEM_ERROR = -4;
+const inflate_Z_BUF_ERROR = -5;
 
-	const MAX_BITS = 15;
+const inflate_mask = [0x00000000, 0x00000001, 0x00000003, 0x00000007, 0x0000000f, 0x0000001f, 0x0000003f, 0x0000007f, 0x000000ff, 0x000001ff, 0x000003ff,
+	0x000007ff, 0x00000fff, 0x00001fff, 0x00003fff, 0x00007fff, 0x0000ffff];
 
-	const Z_OK = 0;
-	const Z_STREAM_END = 1;
-	const Z_NEED_DICT = 2;
-	const Z_STREAM_ERROR = -2;
-	const Z_DATA_ERROR = -3;
-	const Z_MEM_ERROR = -4;
-	const Z_BUF_ERROR = -5;
+const MANY = 1440;
 
-	const inflate_mask = [0x00000000, 0x00000001, 0x00000003, 0x00000007, 0x0000000f, 0x0000001f, 0x0000003f, 0x0000007f, 0x000000ff, 0x000001ff, 0x000003ff,
-		0x000007ff, 0x00000fff, 0x00001fff, 0x00003fff, 0x00007fff, 0x0000ffff];
+// JZlib version : "1.0.2"
+const inflate_Z_NO_FLUSH = 0;
+const inflate_Z_FINISH = 4;
 
-	const MANY = 1440;
+// InfTree
+const fixed_bl = 9;
+const fixed_bd = 5;
 
-	// JZlib version : "1.0.2"
-	const Z_NO_FLUSH = 0;
-	const Z_FINISH = 4;
+const fixed_tl = [96, 7, 256, 0, 8, 80, 0, 8, 16, 84, 8, 115, 82, 7, 31, 0, 8, 112, 0, 8, 48, 0, 9, 192, 80, 7, 10, 0, 8, 96, 0, 8, 32, 0, 9, 160, 0, 8, 0,
+	0, 8, 128, 0, 8, 64, 0, 9, 224, 80, 7, 6, 0, 8, 88, 0, 8, 24, 0, 9, 144, 83, 7, 59, 0, 8, 120, 0, 8, 56, 0, 9, 208, 81, 7, 17, 0, 8, 104, 0, 8, 40,
+	0, 9, 176, 0, 8, 8, 0, 8, 136, 0, 8, 72, 0, 9, 240, 80, 7, 4, 0, 8, 84, 0, 8, 20, 85, 8, 227, 83, 7, 43, 0, 8, 116, 0, 8, 52, 0, 9, 200, 81, 7, 13,
+	0, 8, 100, 0, 8, 36, 0, 9, 168, 0, 8, 4, 0, 8, 132, 0, 8, 68, 0, 9, 232, 80, 7, 8, 0, 8, 92, 0, 8, 28, 0, 9, 152, 84, 7, 83, 0, 8, 124, 0, 8, 60,
+	0, 9, 216, 82, 7, 23, 0, 8, 108, 0, 8, 44, 0, 9, 184, 0, 8, 12, 0, 8, 140, 0, 8, 76, 0, 9, 248, 80, 7, 3, 0, 8, 82, 0, 8, 18, 85, 8, 163, 83, 7,
+	35, 0, 8, 114, 0, 8, 50, 0, 9, 196, 81, 7, 11, 0, 8, 98, 0, 8, 34, 0, 9, 164, 0, 8, 2, 0, 8, 130, 0, 8, 66, 0, 9, 228, 80, 7, 7, 0, 8, 90, 0, 8,
+	26, 0, 9, 148, 84, 7, 67, 0, 8, 122, 0, 8, 58, 0, 9, 212, 82, 7, 19, 0, 8, 106, 0, 8, 42, 0, 9, 180, 0, 8, 10, 0, 8, 138, 0, 8, 74, 0, 9, 244, 80,
+	7, 5, 0, 8, 86, 0, 8, 22, 192, 8, 0, 83, 7, 51, 0, 8, 118, 0, 8, 54, 0, 9, 204, 81, 7, 15, 0, 8, 102, 0, 8, 38, 0, 9, 172, 0, 8, 6, 0, 8, 134, 0,
+	8, 70, 0, 9, 236, 80, 7, 9, 0, 8, 94, 0, 8, 30, 0, 9, 156, 84, 7, 99, 0, 8, 126, 0, 8, 62, 0, 9, 220, 82, 7, 27, 0, 8, 110, 0, 8, 46, 0, 9, 188, 0,
+	8, 14, 0, 8, 142, 0, 8, 78, 0, 9, 252, 96, 7, 256, 0, 8, 81, 0, 8, 17, 85, 8, 131, 82, 7, 31, 0, 8, 113, 0, 8, 49, 0, 9, 194, 80, 7, 10, 0, 8, 97,
+	0, 8, 33, 0, 9, 162, 0, 8, 1, 0, 8, 129, 0, 8, 65, 0, 9, 226, 80, 7, 6, 0, 8, 89, 0, 8, 25, 0, 9, 146, 83, 7, 59, 0, 8, 121, 0, 8, 57, 0, 9, 210,
+	81, 7, 17, 0, 8, 105, 0, 8, 41, 0, 9, 178, 0, 8, 9, 0, 8, 137, 0, 8, 73, 0, 9, 242, 80, 7, 4, 0, 8, 85, 0, 8, 21, 80, 8, 258, 83, 7, 43, 0, 8, 117,
+	0, 8, 53, 0, 9, 202, 81, 7, 13, 0, 8, 101, 0, 8, 37, 0, 9, 170, 0, 8, 5, 0, 8, 133, 0, 8, 69, 0, 9, 234, 80, 7, 8, 0, 8, 93, 0, 8, 29, 0, 9, 154,
+	84, 7, 83, 0, 8, 125, 0, 8, 61, 0, 9, 218, 82, 7, 23, 0, 8, 109, 0, 8, 45, 0, 9, 186, 0, 8, 13, 0, 8, 141, 0, 8, 77, 0, 9, 250, 80, 7, 3, 0, 8, 83,
+	0, 8, 19, 85, 8, 195, 83, 7, 35, 0, 8, 115, 0, 8, 51, 0, 9, 198, 81, 7, 11, 0, 8, 99, 0, 8, 35, 0, 9, 166, 0, 8, 3, 0, 8, 131, 0, 8, 67, 0, 9, 230,
+	80, 7, 7, 0, 8, 91, 0, 8, 27, 0, 9, 150, 84, 7, 67, 0, 8, 123, 0, 8, 59, 0, 9, 214, 82, 7, 19, 0, 8, 107, 0, 8, 43, 0, 9, 182, 0, 8, 11, 0, 8, 139,
+	0, 8, 75, 0, 9, 246, 80, 7, 5, 0, 8, 87, 0, 8, 23, 192, 8, 0, 83, 7, 51, 0, 8, 119, 0, 8, 55, 0, 9, 206, 81, 7, 15, 0, 8, 103, 0, 8, 39, 0, 9, 174,
+	0, 8, 7, 0, 8, 135, 0, 8, 71, 0, 9, 238, 80, 7, 9, 0, 8, 95, 0, 8, 31, 0, 9, 158, 84, 7, 99, 0, 8, 127, 0, 8, 63, 0, 9, 222, 82, 7, 27, 0, 8, 111,
+	0, 8, 47, 0, 9, 190, 0, 8, 15, 0, 8, 143, 0, 8, 79, 0, 9, 254, 96, 7, 256, 0, 8, 80, 0, 8, 16, 84, 8, 115, 82, 7, 31, 0, 8, 112, 0, 8, 48, 0, 9,
+	193, 80, 7, 10, 0, 8, 96, 0, 8, 32, 0, 9, 161, 0, 8, 0, 0, 8, 128, 0, 8, 64, 0, 9, 225, 80, 7, 6, 0, 8, 88, 0, 8, 24, 0, 9, 145, 83, 7, 59, 0, 8,
+	120, 0, 8, 56, 0, 9, 209, 81, 7, 17, 0, 8, 104, 0, 8, 40, 0, 9, 177, 0, 8, 8, 0, 8, 136, 0, 8, 72, 0, 9, 241, 80, 7, 4, 0, 8, 84, 0, 8, 20, 85, 8,
+	227, 83, 7, 43, 0, 8, 116, 0, 8, 52, 0, 9, 201, 81, 7, 13, 0, 8, 100, 0, 8, 36, 0, 9, 169, 0, 8, 4, 0, 8, 132, 0, 8, 68, 0, 9, 233, 80, 7, 8, 0, 8,
+	92, 0, 8, 28, 0, 9, 153, 84, 7, 83, 0, 8, 124, 0, 8, 60, 0, 9, 217, 82, 7, 23, 0, 8, 108, 0, 8, 44, 0, 9, 185, 0, 8, 12, 0, 8, 140, 0, 8, 76, 0, 9,
+	249, 80, 7, 3, 0, 8, 82, 0, 8, 18, 85, 8, 163, 83, 7, 35, 0, 8, 114, 0, 8, 50, 0, 9, 197, 81, 7, 11, 0, 8, 98, 0, 8, 34, 0, 9, 165, 0, 8, 2, 0, 8,
+	130, 0, 8, 66, 0, 9, 229, 80, 7, 7, 0, 8, 90, 0, 8, 26, 0, 9, 149, 84, 7, 67, 0, 8, 122, 0, 8, 58, 0, 9, 213, 82, 7, 19, 0, 8, 106, 0, 8, 42, 0, 9,
+	181, 0, 8, 10, 0, 8, 138, 0, 8, 74, 0, 9, 245, 80, 7, 5, 0, 8, 86, 0, 8, 22, 192, 8, 0, 83, 7, 51, 0, 8, 118, 0, 8, 54, 0, 9, 205, 81, 7, 15, 0, 8,
+	102, 0, 8, 38, 0, 9, 173, 0, 8, 6, 0, 8, 134, 0, 8, 70, 0, 9, 237, 80, 7, 9, 0, 8, 94, 0, 8, 30, 0, 9, 157, 84, 7, 99, 0, 8, 126, 0, 8, 62, 0, 9,
+	221, 82, 7, 27, 0, 8, 110, 0, 8, 46, 0, 9, 189, 0, 8, 14, 0, 8, 142, 0, 8, 78, 0, 9, 253, 96, 7, 256, 0, 8, 81, 0, 8, 17, 85, 8, 131, 82, 7, 31, 0,
+	8, 113, 0, 8, 49, 0, 9, 195, 80, 7, 10, 0, 8, 97, 0, 8, 33, 0, 9, 163, 0, 8, 1, 0, 8, 129, 0, 8, 65, 0, 9, 227, 80, 7, 6, 0, 8, 89, 0, 8, 25, 0, 9,
+	147, 83, 7, 59, 0, 8, 121, 0, 8, 57, 0, 9, 211, 81, 7, 17, 0, 8, 105, 0, 8, 41, 0, 9, 179, 0, 8, 9, 0, 8, 137, 0, 8, 73, 0, 9, 243, 80, 7, 4, 0, 8,
+	85, 0, 8, 21, 80, 8, 258, 83, 7, 43, 0, 8, 117, 0, 8, 53, 0, 9, 203, 81, 7, 13, 0, 8, 101, 0, 8, 37, 0, 9, 171, 0, 8, 5, 0, 8, 133, 0, 8, 69, 0, 9,
+	235, 80, 7, 8, 0, 8, 93, 0, 8, 29, 0, 9, 155, 84, 7, 83, 0, 8, 125, 0, 8, 61, 0, 9, 219, 82, 7, 23, 0, 8, 109, 0, 8, 45, 0, 9, 187, 0, 8, 13, 0, 8,
+	141, 0, 8, 77, 0, 9, 251, 80, 7, 3, 0, 8, 83, 0, 8, 19, 85, 8, 195, 83, 7, 35, 0, 8, 115, 0, 8, 51, 0, 9, 199, 81, 7, 11, 0, 8, 99, 0, 8, 35, 0, 9,
+	167, 0, 8, 3, 0, 8, 131, 0, 8, 67, 0, 9, 231, 80, 7, 7, 0, 8, 91, 0, 8, 27, 0, 9, 151, 84, 7, 67, 0, 8, 123, 0, 8, 59, 0, 9, 215, 82, 7, 19, 0, 8,
+	107, 0, 8, 43, 0, 9, 183, 0, 8, 11, 0, 8, 139, 0, 8, 75, 0, 9, 247, 80, 7, 5, 0, 8, 87, 0, 8, 23, 192, 8, 0, 83, 7, 51, 0, 8, 119, 0, 8, 55, 0, 9,
+	207, 81, 7, 15, 0, 8, 103, 0, 8, 39, 0, 9, 175, 0, 8, 7, 0, 8, 135, 0, 8, 71, 0, 9, 239, 80, 7, 9, 0, 8, 95, 0, 8, 31, 0, 9, 159, 84, 7, 99, 0, 8,
+	127, 0, 8, 63, 0, 9, 223, 82, 7, 27, 0, 8, 111, 0, 8, 47, 0, 9, 191, 0, 8, 15, 0, 8, 143, 0, 8, 79, 0, 9, 255];
+const fixed_td = [80, 5, 1, 87, 5, 257, 83, 5, 17, 91, 5, 4097, 81, 5, 5, 89, 5, 1025, 85, 5, 65, 93, 5, 16385, 80, 5, 3, 88, 5, 513, 84, 5, 33, 92, 5,
+	8193, 82, 5, 9, 90, 5, 2049, 86, 5, 129, 192, 5, 24577, 80, 5, 2, 87, 5, 385, 83, 5, 25, 91, 5, 6145, 81, 5, 7, 89, 5, 1537, 85, 5, 97, 93, 5,
+	24577, 80, 5, 4, 88, 5, 769, 84, 5, 49, 92, 5, 12289, 82, 5, 13, 90, 5, 3073, 86, 5, 193, 192, 5, 24577];
 
-	// InfTree
-	const fixed_bl = 9;
-	const fixed_bd = 5;
+// Tables for deflate from PKZIP's appnote.txt.
+const cplens = [ // Copy lengths for literal codes 257..285
+	3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0];
 
-	const fixed_tl = [96, 7, 256, 0, 8, 80, 0, 8, 16, 84, 8, 115, 82, 7, 31, 0, 8, 112, 0, 8, 48, 0, 9, 192, 80, 7, 10, 0, 8, 96, 0, 8, 32, 0, 9, 160, 0, 8, 0,
-		0, 8, 128, 0, 8, 64, 0, 9, 224, 80, 7, 6, 0, 8, 88, 0, 8, 24, 0, 9, 144, 83, 7, 59, 0, 8, 120, 0, 8, 56, 0, 9, 208, 81, 7, 17, 0, 8, 104, 0, 8, 40,
-		0, 9, 176, 0, 8, 8, 0, 8, 136, 0, 8, 72, 0, 9, 240, 80, 7, 4, 0, 8, 84, 0, 8, 20, 85, 8, 227, 83, 7, 43, 0, 8, 116, 0, 8, 52, 0, 9, 200, 81, 7, 13,
-		0, 8, 100, 0, 8, 36, 0, 9, 168, 0, 8, 4, 0, 8, 132, 0, 8, 68, 0, 9, 232, 80, 7, 8, 0, 8, 92, 0, 8, 28, 0, 9, 152, 84, 7, 83, 0, 8, 124, 0, 8, 60,
-		0, 9, 216, 82, 7, 23, 0, 8, 108, 0, 8, 44, 0, 9, 184, 0, 8, 12, 0, 8, 140, 0, 8, 76, 0, 9, 248, 80, 7, 3, 0, 8, 82, 0, 8, 18, 85, 8, 163, 83, 7,
-		35, 0, 8, 114, 0, 8, 50, 0, 9, 196, 81, 7, 11, 0, 8, 98, 0, 8, 34, 0, 9, 164, 0, 8, 2, 0, 8, 130, 0, 8, 66, 0, 9, 228, 80, 7, 7, 0, 8, 90, 0, 8,
-		26, 0, 9, 148, 84, 7, 67, 0, 8, 122, 0, 8, 58, 0, 9, 212, 82, 7, 19, 0, 8, 106, 0, 8, 42, 0, 9, 180, 0, 8, 10, 0, 8, 138, 0, 8, 74, 0, 9, 244, 80,
-		7, 5, 0, 8, 86, 0, 8, 22, 192, 8, 0, 83, 7, 51, 0, 8, 118, 0, 8, 54, 0, 9, 204, 81, 7, 15, 0, 8, 102, 0, 8, 38, 0, 9, 172, 0, 8, 6, 0, 8, 134, 0,
-		8, 70, 0, 9, 236, 80, 7, 9, 0, 8, 94, 0, 8, 30, 0, 9, 156, 84, 7, 99, 0, 8, 126, 0, 8, 62, 0, 9, 220, 82, 7, 27, 0, 8, 110, 0, 8, 46, 0, 9, 188, 0,
-		8, 14, 0, 8, 142, 0, 8, 78, 0, 9, 252, 96, 7, 256, 0, 8, 81, 0, 8, 17, 85, 8, 131, 82, 7, 31, 0, 8, 113, 0, 8, 49, 0, 9, 194, 80, 7, 10, 0, 8, 97,
-		0, 8, 33, 0, 9, 162, 0, 8, 1, 0, 8, 129, 0, 8, 65, 0, 9, 226, 80, 7, 6, 0, 8, 89, 0, 8, 25, 0, 9, 146, 83, 7, 59, 0, 8, 121, 0, 8, 57, 0, 9, 210,
-		81, 7, 17, 0, 8, 105, 0, 8, 41, 0, 9, 178, 0, 8, 9, 0, 8, 137, 0, 8, 73, 0, 9, 242, 80, 7, 4, 0, 8, 85, 0, 8, 21, 80, 8, 258, 83, 7, 43, 0, 8, 117,
-		0, 8, 53, 0, 9, 202, 81, 7, 13, 0, 8, 101, 0, 8, 37, 0, 9, 170, 0, 8, 5, 0, 8, 133, 0, 8, 69, 0, 9, 234, 80, 7, 8, 0, 8, 93, 0, 8, 29, 0, 9, 154,
-		84, 7, 83, 0, 8, 125, 0, 8, 61, 0, 9, 218, 82, 7, 23, 0, 8, 109, 0, 8, 45, 0, 9, 186, 0, 8, 13, 0, 8, 141, 0, 8, 77, 0, 9, 250, 80, 7, 3, 0, 8, 83,
-		0, 8, 19, 85, 8, 195, 83, 7, 35, 0, 8, 115, 0, 8, 51, 0, 9, 198, 81, 7, 11, 0, 8, 99, 0, 8, 35, 0, 9, 166, 0, 8, 3, 0, 8, 131, 0, 8, 67, 0, 9, 230,
-		80, 7, 7, 0, 8, 91, 0, 8, 27, 0, 9, 150, 84, 7, 67, 0, 8, 123, 0, 8, 59, 0, 9, 214, 82, 7, 19, 0, 8, 107, 0, 8, 43, 0, 9, 182, 0, 8, 11, 0, 8, 139,
-		0, 8, 75, 0, 9, 246, 80, 7, 5, 0, 8, 87, 0, 8, 23, 192, 8, 0, 83, 7, 51, 0, 8, 119, 0, 8, 55, 0, 9, 206, 81, 7, 15, 0, 8, 103, 0, 8, 39, 0, 9, 174,
-		0, 8, 7, 0, 8, 135, 0, 8, 71, 0, 9, 238, 80, 7, 9, 0, 8, 95, 0, 8, 31, 0, 9, 158, 84, 7, 99, 0, 8, 127, 0, 8, 63, 0, 9, 222, 82, 7, 27, 0, 8, 111,
-		0, 8, 47, 0, 9, 190, 0, 8, 15, 0, 8, 143, 0, 8, 79, 0, 9, 254, 96, 7, 256, 0, 8, 80, 0, 8, 16, 84, 8, 115, 82, 7, 31, 0, 8, 112, 0, 8, 48, 0, 9,
-		193, 80, 7, 10, 0, 8, 96, 0, 8, 32, 0, 9, 161, 0, 8, 0, 0, 8, 128, 0, 8, 64, 0, 9, 225, 80, 7, 6, 0, 8, 88, 0, 8, 24, 0, 9, 145, 83, 7, 59, 0, 8,
-		120, 0, 8, 56, 0, 9, 209, 81, 7, 17, 0, 8, 104, 0, 8, 40, 0, 9, 177, 0, 8, 8, 0, 8, 136, 0, 8, 72, 0, 9, 241, 80, 7, 4, 0, 8, 84, 0, 8, 20, 85, 8,
-		227, 83, 7, 43, 0, 8, 116, 0, 8, 52, 0, 9, 201, 81, 7, 13, 0, 8, 100, 0, 8, 36, 0, 9, 169, 0, 8, 4, 0, 8, 132, 0, 8, 68, 0, 9, 233, 80, 7, 8, 0, 8,
-		92, 0, 8, 28, 0, 9, 153, 84, 7, 83, 0, 8, 124, 0, 8, 60, 0, 9, 217, 82, 7, 23, 0, 8, 108, 0, 8, 44, 0, 9, 185, 0, 8, 12, 0, 8, 140, 0, 8, 76, 0, 9,
-		249, 80, 7, 3, 0, 8, 82, 0, 8, 18, 85, 8, 163, 83, 7, 35, 0, 8, 114, 0, 8, 50, 0, 9, 197, 81, 7, 11, 0, 8, 98, 0, 8, 34, 0, 9, 165, 0, 8, 2, 0, 8,
-		130, 0, 8, 66, 0, 9, 229, 80, 7, 7, 0, 8, 90, 0, 8, 26, 0, 9, 149, 84, 7, 67, 0, 8, 122, 0, 8, 58, 0, 9, 213, 82, 7, 19, 0, 8, 106, 0, 8, 42, 0, 9,
-		181, 0, 8, 10, 0, 8, 138, 0, 8, 74, 0, 9, 245, 80, 7, 5, 0, 8, 86, 0, 8, 22, 192, 8, 0, 83, 7, 51, 0, 8, 118, 0, 8, 54, 0, 9, 205, 81, 7, 15, 0, 8,
-		102, 0, 8, 38, 0, 9, 173, 0, 8, 6, 0, 8, 134, 0, 8, 70, 0, 9, 237, 80, 7, 9, 0, 8, 94, 0, 8, 30, 0, 9, 157, 84, 7, 99, 0, 8, 126, 0, 8, 62, 0, 9,
-		221, 82, 7, 27, 0, 8, 110, 0, 8, 46, 0, 9, 189, 0, 8, 14, 0, 8, 142, 0, 8, 78, 0, 9, 253, 96, 7, 256, 0, 8, 81, 0, 8, 17, 85, 8, 131, 82, 7, 31, 0,
-		8, 113, 0, 8, 49, 0, 9, 195, 80, 7, 10, 0, 8, 97, 0, 8, 33, 0, 9, 163, 0, 8, 1, 0, 8, 129, 0, 8, 65, 0, 9, 227, 80, 7, 6, 0, 8, 89, 0, 8, 25, 0, 9,
-		147, 83, 7, 59, 0, 8, 121, 0, 8, 57, 0, 9, 211, 81, 7, 17, 0, 8, 105, 0, 8, 41, 0, 9, 179, 0, 8, 9, 0, 8, 137, 0, 8, 73, 0, 9, 243, 80, 7, 4, 0, 8,
-		85, 0, 8, 21, 80, 8, 258, 83, 7, 43, 0, 8, 117, 0, 8, 53, 0, 9, 203, 81, 7, 13, 0, 8, 101, 0, 8, 37, 0, 9, 171, 0, 8, 5, 0, 8, 133, 0, 8, 69, 0, 9,
-		235, 80, 7, 8, 0, 8, 93, 0, 8, 29, 0, 9, 155, 84, 7, 83, 0, 8, 125, 0, 8, 61, 0, 9, 219, 82, 7, 23, 0, 8, 109, 0, 8, 45, 0, 9, 187, 0, 8, 13, 0, 8,
-		141, 0, 8, 77, 0, 9, 251, 80, 7, 3, 0, 8, 83, 0, 8, 19, 85, 8, 195, 83, 7, 35, 0, 8, 115, 0, 8, 51, 0, 9, 199, 81, 7, 11, 0, 8, 99, 0, 8, 35, 0, 9,
-		167, 0, 8, 3, 0, 8, 131, 0, 8, 67, 0, 9, 231, 80, 7, 7, 0, 8, 91, 0, 8, 27, 0, 9, 151, 84, 7, 67, 0, 8, 123, 0, 8, 59, 0, 9, 215, 82, 7, 19, 0, 8,
-		107, 0, 8, 43, 0, 9, 183, 0, 8, 11, 0, 8, 139, 0, 8, 75, 0, 9, 247, 80, 7, 5, 0, 8, 87, 0, 8, 23, 192, 8, 0, 83, 7, 51, 0, 8, 119, 0, 8, 55, 0, 9,
-		207, 81, 7, 15, 0, 8, 103, 0, 8, 39, 0, 9, 175, 0, 8, 7, 0, 8, 135, 0, 8, 71, 0, 9, 239, 80, 7, 9, 0, 8, 95, 0, 8, 31, 0, 9, 159, 84, 7, 99, 0, 8,
-		127, 0, 8, 63, 0, 9, 223, 82, 7, 27, 0, 8, 111, 0, 8, 47, 0, 9, 191, 0, 8, 15, 0, 8, 143, 0, 8, 79, 0, 9, 255];
-	const fixed_td = [80, 5, 1, 87, 5, 257, 83, 5, 17, 91, 5, 4097, 81, 5, 5, 89, 5, 1025, 85, 5, 65, 93, 5, 16385, 80, 5, 3, 88, 5, 513, 84, 5, 33, 92, 5,
-		8193, 82, 5, 9, 90, 5, 2049, 86, 5, 129, 192, 5, 24577, 80, 5, 2, 87, 5, 385, 83, 5, 25, 91, 5, 6145, 81, 5, 7, 89, 5, 1537, 85, 5, 97, 93, 5,
-		24577, 80, 5, 4, 88, 5, 769, 84, 5, 49, 92, 5, 12289, 82, 5, 13, 90, 5, 3073, 86, 5, 193, 192, 5, 24577];
+// see note #13 above about 258
+const cplext = [ // Extra bits for literal codes 257..285
+	0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 112, 112 // 112==invalid
+];
 
-	// Tables for deflate from PKZIP's appnote.txt.
-	const cplens = [ // Copy lengths for literal codes 257..285
-		3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0];
+const cpdist = [ // Copy offsets for distance codes 0..29
+	1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
 
-	// see note #13 above about 258
-	const cplext = [ // Extra bits for literal codes 257..285
-		0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 112, 112 // 112==invalid
-	];
+const cpdext = [ // Extra bits for distance codes
+	0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
 
-	const cpdist = [ // Copy offsets for distance codes 0..29
-		1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+// If BMAX needs to be larger than 16, then h and x[] should be uLong.
+const BMAX = 15; // maximum bit length of any code
 
-	const cpdext = [ // Extra bits for distance codes
-		0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+function InfTree() {
+	const that = this;
 
-	// If BMAX needs to be larger than 16, then h and x[] should be uLong.
-	const BMAX = 15; // maximum bit length of any code
+	let hn; // hufts used in space
+	let v; // work area for huft_build
+	let c; // bit length count table
+	let r; // table entry for structure assignment
+	let u; // table stack
+	let x; // bit offsets, then code stack
 
-	function InfTree() {
-		const that = this;
+	function huft_build(b, // code lengths in bits (all assumed <=
+		// BMAX)
+		bindex, n, // number of codes (assumed <= 288)
+		s, // number of simple-valued codes (0..s-1)
+		d, // list of base values for non-simple codes
+		e, // list of extra bits for non-simple codes
+		t, // result: starting table
+		m, // maximum lookup bits, returns actual
+		hp,// space for trees
+		hn,// hufts used in space
+		v // working area: values in order of bit length
+	) {
+		// Given a list of code lengths and a maximum table size, make a set of
+		// tables to decode that set of codes. Return Z_OK on success,
+		// Z_BUF_ERROR
+		// if the given code set is incomplete (the tables are still built in
+		// this
+		// case), Z_DATA_ERROR if the input is invalid (an over-subscribed set
+		// of
+		// lengths), or Z_MEM_ERROR if not enough memory.
 
-		let hn; // hufts used in space
-		let v; // work area for huft_build
-		let c; // bit length count table
-		let r; // table entry for structure assignment
-		let u; // table stack
-		let x; // bit offsets, then code stack
+		let a; // counter for codes of length k
+		let f; // i repeats in table every f entries
+		let g; // maximum code length
+		let h; // table level
+		let i; // counter, current code
+		let j; // counter
+		let k; // number of bits in current code
+		let l; // bits per table (returned in m)
+		let mask; // (1 << w) - 1, to avoid cc -O bug on HP
+		let p; // pointer into c[], b[], or v[]
+		let q; // points to current table
+		let w; // bits before this table == (l * h)
+		let xp; // pointer into x
+		let y; // number of dummy codes added
+		let z; // number of entries in current table
 
-		function huft_build(b, // code lengths in bits (all assumed <=
-			// BMAX)
-			bindex, n, // number of codes (assumed <= 288)
-			s, // number of simple-valued codes (0..s-1)
-			d, // list of base values for non-simple codes
-			e, // list of extra bits for non-simple codes
-			t, // result: starting table
-			m, // maximum lookup bits, returns actual
-			hp,// space for trees
-			hn,// hufts used in space
-			v // working area: values in order of bit length
-		) {
-			// Given a list of code lengths and a maximum table size, make a set of
-			// tables to decode that set of codes. Return Z_OK on success,
-			// Z_BUF_ERROR
-			// if the given code set is incomplete (the tables are still built in
-			// this
-			// case), Z_DATA_ERROR if the input is invalid (an over-subscribed set
-			// of
-			// lengths), or Z_MEM_ERROR if not enough memory.
+		// Generate counts for each bit length
 
-			let a; // counter for codes of length k
-			let f; // i repeats in table every f entries
-			let g; // maximum code length
-			let h; // table level
-			let i; // counter, current code
-			let j; // counter
-			let k; // number of bits in current code
-			let l; // bits per table (returned in m)
-			let mask; // (1 << w) - 1, to avoid cc -O bug on HP
-			let p; // pointer into c[], b[], or v[]
-			let q; // points to current table
-			let w; // bits before this table == (l * h)
-			let xp; // pointer into x
-			let y; // number of dummy codes added
-			let z; // number of entries in current table
+		p = 0;
+		i = n;
+		do {
+			c[b[bindex + p]]++;
+			p++;
+			i--; // assume all entries <= BMAX
+		} while (i !== 0);
 
-			// Generate counts for each bit length
+		if (c[0] == n) { // null input--all zero length codes
+			t[0] = -1;
+			m[0] = 0;
+			return inflate_Z_OK;
+		}
 
-			p = 0;
-			i = n;
-			do {
-				c[b[bindex + p]]++;
-				p++;
-				i--; // assume all entries <= BMAX
-			} while (i !== 0);
+		// Find minimum and maximum length, bound *m by those
+		l = m[0];
+		for (j = 1; j <= BMAX; j++)
+			if (c[j] !== 0)
+				break;
+		k = j; // minimum code length
+		if (l < j) {
+			l = j;
+		}
+		for (i = BMAX; i !== 0; i--) {
+			if (c[i] !== 0)
+				break;
+		}
+		g = i; // maximum code length
+		if (l > i) {
+			l = i;
+		}
+		m[0] = l;
 
-			if (c[0] == n) { // null input--all zero length codes
-				t[0] = -1;
-				m[0] = 0;
-				return Z_OK;
+		// Adjust last length count to fill out codes, if needed
+		for (y = 1 << j; j < i; j++, y <<= 1) {
+			if ((y -= c[j]) < 0) {
+				return inflate_Z_DATA_ERROR;
 			}
+		}
+		if ((y -= c[i]) < 0) {
+			return inflate_Z_DATA_ERROR;
+		}
+		c[i] += y;
 
-			// Find minimum and maximum length, bound *m by those
-			l = m[0];
-			for (j = 1; j <= BMAX; j++)
-				if (c[j] !== 0)
-					break;
-			k = j; // minimum code length
-			if (l < j) {
-				l = j;
-			}
-			for (i = BMAX; i !== 0; i--) {
-				if (c[i] !== 0)
-					break;
-			}
-			g = i; // maximum code length
-			if (l > i) {
-				l = i;
-			}
-			m[0] = l;
+		// Generate starting offsets into the value table for each length
+		x[1] = j = 0;
+		p = 1;
+		xp = 2;
+		while (--i !== 0) { // note that i == g from above
+			x[xp] = (j += c[p]);
+			xp++;
+			p++;
+		}
 
-			// Adjust last length count to fill out codes, if needed
-			for (y = 1 << j; j < i; j++, y <<= 1) {
-				if ((y -= c[j]) < 0) {
-					return Z_DATA_ERROR;
-				}
+		// Make a table of values in order of bit lengths
+		i = 0;
+		p = 0;
+		do {
+			if ((j = b[bindex + p]) !== 0) {
+				v[x[j]++] = i;
 			}
-			if ((y -= c[i]) < 0) {
-				return Z_DATA_ERROR;
-			}
-			c[i] += y;
+			p++;
+		} while (++i < n);
+		n = x[g]; // set n to length of v
 
-			// Generate starting offsets into the value table for each length
-			x[1] = j = 0;
-			p = 1;
-			xp = 2;
-			while (--i !== 0) { // note that i == g from above
-				x[xp] = (j += c[p]);
-				xp++;
-				p++;
-			}
+		// Generate the Huffman codes and for each, make the table entries
+		x[0] = i = 0; // first Huffman code is zero
+		p = 0; // grab values in bit order
+		h = -1; // no tables yet--level -1
+		w = -l; // bits decoded == (l * h)
+		u[0] = 0; // just to keep compilers happy
+		q = 0; // ditto
+		z = 0; // ditto
 
-			// Make a table of values in order of bit lengths
-			i = 0;
-			p = 0;
-			do {
-				if ((j = b[bindex + p]) !== 0) {
-					v[x[j]++] = i;
-				}
-				p++;
-			} while (++i < n);
-			n = x[g]; // set n to length of v
-
-			// Generate the Huffman codes and for each, make the table entries
-			x[0] = i = 0; // first Huffman code is zero
-			p = 0; // grab values in bit order
-			h = -1; // no tables yet--level -1
-			w = -l; // bits decoded == (l * h)
-			u[0] = 0; // just to keep compilers happy
-			q = 0; // ditto
-			z = 0; // ditto
-
-			// go through the bit lengths (k already is bits in shortest code)
-			for (; k <= g; k++) {
-				a = c[k];
-				while (a-- !== 0) {
-					// here i is the Huffman code of length k bits for value *p
-					// make tables up to required level
-					while (k > w + l) {
-						h++;
-						w += l; // previous table always l bits
-						// compute minimum size table less than or equal to l bits
-						z = g - w;
-						z = (z > l) ? l : z; // table size upper limit
-						if ((f = 1 << (j = k - w)) > a + 1) { // try a k-w bit table
-							// too few codes for
-							// k-w bit table
-							f -= a + 1; // deduct codes from patterns left
-							xp = k;
-							if (j < z) {
-								while (++j < z) { // try smaller tables up to z bits
-									if ((f <<= 1) <= c[++xp])
-										break; // enough codes to use up j bits
-									f -= c[xp]; // else deduct codes from patterns
-								}
+		// go through the bit lengths (k already is bits in shortest code)
+		for (; k <= g; k++) {
+			a = c[k];
+			while (a-- !== 0) {
+				// here i is the Huffman code of length k bits for value *p
+				// make tables up to required level
+				while (k > w + l) {
+					h++;
+					w += l; // previous table always l bits
+					// compute minimum size table less than or equal to l bits
+					z = g - w;
+					z = (z > l) ? l : z; // table size upper limit
+					if ((f = 1 << (j = k - w)) > a + 1) { // try a k-w bit table
+						// too few codes for
+						// k-w bit table
+						f -= a + 1; // deduct codes from patterns left
+						xp = k;
+						if (j < z) {
+							while (++j < z) { // try smaller tables up to z bits
+								if ((f <<= 1) <= c[++xp])
+									break; // enough codes to use up j bits
+								f -= c[xp]; // else deduct codes from patterns
 							}
 						}
-						z = 1 << j; // table entries for j-bit table
-
-						// allocate new table
-						if (hn[0] + z > MANY) { // (note: doesn't matter for fixed)
-							return Z_DATA_ERROR; // overflow of MANY
-						}
-						u[h] = q = /* hp+ */hn[0]; // DEBUG
-						hn[0] += z;
-
-						// connect to last table, if there is one
-						if (h !== 0) {
-							x[h] = i; // save pattern for backing up
-							r[0] = /* (byte) */j; // bits in this table
-							r[1] = /* (byte) */l; // bits to dump before this table
-							j = i >>> (w - l);
-							r[2] = /* (int) */(q - u[h - 1] - j); // offset to this table
-							hp.set(r, (u[h - 1] + j) * 3);
-							// to
-							// last
-							// table
-						} else {
-							t[0] = q; // first table is returned result
-						}
 					}
+					z = 1 << j; // table entries for j-bit table
 
-					// set up table entry in r
-					r[1] = /* (byte) */(k - w);
-					if (p >= n) {
-						r[0] = 128 + 64; // out of values--invalid code
-					} else if (v[p] < s) {
-						r[0] = /* (byte) */(v[p] < 256 ? 0 : 32 + 64); // 256 is
-						// end-of-block
-						r[2] = v[p++]; // simple code is just the value
+					// allocate new table
+					if (hn[0] + z > MANY) { // (note: doesn't matter for fixed)
+						return inflate_Z_DATA_ERROR; // overflow of MANY
+					}
+					u[h] = q = /* hp+ */hn[0]; // DEBUG
+					hn[0] += z;
+
+					// connect to last table, if there is one
+					if (h !== 0) {
+						x[h] = i; // save pattern for backing up
+						r[0] = /* (byte) */j; // bits in this table
+						r[1] = /* (byte) */l; // bits to dump before this table
+						j = i >>> (w - l);
+						r[2] = /* (int) */(q - u[h - 1] - j); // offset to this table
+						hp.set(r, (u[h - 1] + j) * 3);
+						// to
+						// last
+						// table
 					} else {
-						r[0] = /* (byte) */(e[v[p] - s] + 16 + 64); // non-simple--look
-						// up in lists
-						r[2] = d[v[p++] - s];
+						t[0] = q; // first table is returned result
 					}
+				}
 
-					// fill code-like entries with r
-					f = 1 << (k - w);
-					for (j = i >>> w; j < z; j += f) {
-						hp.set(r, (q + j) * 3);
-					}
+				// set up table entry in r
+				r[1] = /* (byte) */(k - w);
+				if (p >= n) {
+					r[0] = 128 + 64; // out of values--invalid code
+				} else if (v[p] < s) {
+					r[0] = /* (byte) */(v[p] < 256 ? 0 : 32 + 64); // 256 is
+					// end-of-block
+					r[2] = v[p++]; // simple code is just the value
+				} else {
+					r[0] = /* (byte) */(e[v[p] - s] + 16 + 64); // non-simple--look
+					// up in lists
+					r[2] = d[v[p++] - s];
+				}
 
-					// backwards increment the k-bit code i
-					for (j = 1 << (k - 1); (i & j) !== 0; j >>>= 1) {
-						i ^= j;
-					}
+				// fill code-like entries with r
+				f = 1 << (k - w);
+				for (j = i >>> w; j < z; j += f) {
+					hp.set(r, (q + j) * 3);
+				}
+
+				// backwards increment the k-bit code i
+				for (j = 1 << (k - 1); (i & j) !== 0; j >>>= 1) {
 					i ^= j;
+				}
+				i ^= j;
 
-					// backup over finished tables
-					mask = (1 << w) - 1; // needed on HP, cc -O bug
-					while ((i & mask) != x[h]) {
-						h--; // don't need to update q
-						w -= l;
-						mask = (1 << w) - 1;
-					}
+				// backup over finished tables
+				mask = (1 << w) - 1; // needed on HP, cc -O bug
+				while ((i & mask) != x[h]) {
+					h--; // don't need to update q
+					w -= l;
+					mask = (1 << w) - 1;
 				}
 			}
-			// Return Z_BUF_ERROR if we were given an incomplete table
-			return y !== 0 && g != 1 ? Z_BUF_ERROR : Z_OK;
 		}
-
-		function initWorkArea(vsize) {
-			let i;
-			if (!hn) {
-				hn = []; // []; //new Array(1);
-				v = []; // new Array(vsize);
-				c = new Int32Array(BMAX + 1); // new Array(BMAX + 1);
-				r = []; // new Array(3);
-				u = new Int32Array(BMAX); // new Array(BMAX);
-				x = new Int32Array(BMAX + 1); // new Array(BMAX + 1);
-			}
-			if (v.length < vsize) {
-				v = []; // new Array(vsize);
-			}
-			for (i = 0; i < vsize; i++) {
-				v[i] = 0;
-			}
-			for (i = 0; i < BMAX + 1; i++) {
-				c[i] = 0;
-			}
-			for (i = 0; i < 3; i++) {
-				r[i] = 0;
-			}
-			// for(int i=0; i<BMAX; i++){u[i]=0;}
-			u.set(c.subarray(0, BMAX), 0);
-			// for(int i=0; i<BMAX+1; i++){x[i]=0;}
-			x.set(c.subarray(0, BMAX + 1), 0);
-		}
-
-		that.inflate_trees_bits = function (c, // 19 code lengths
-			bb, // bits tree desired/actual depth
-			tb, // bits tree result
-			hp, // space for trees
-			z // for messages
-		) {
-			let result;
-			initWorkArea(19);
-			hn[0] = 0;
-			result = huft_build(c, 0, 19, 19, null, null, tb, bb, hp, hn, v);
-
-			if (result == Z_DATA_ERROR) {
-				z.msg = "oversubscribed dynamic bit lengths tree";
-			} else if (result == Z_BUF_ERROR || bb[0] === 0) {
-				z.msg = "incomplete dynamic bit lengths tree";
-				result = Z_DATA_ERROR;
-			}
-			return result;
-		};
-
-		that.inflate_trees_dynamic = function (nl, // number of literal/length codes
-			nd, // number of distance codes
-			c, // that many (total) code lengths
-			bl, // literal desired/actual bit depth
-			bd, // distance desired/actual bit depth
-			tl, // literal/length tree result
-			td, // distance tree result
-			hp, // space for trees
-			z // for messages
-		) {
-			let result;
-
-			// build literal/length tree
-			initWorkArea(288);
-			hn[0] = 0;
-			result = huft_build(c, 0, nl, 257, cplens, cplext, tl, bl, hp, hn, v);
-			if (result != Z_OK || bl[0] === 0) {
-				if (result == Z_DATA_ERROR) {
-					z.msg = "oversubscribed literal/length tree";
-				} else if (result != Z_MEM_ERROR) {
-					z.msg = "incomplete literal/length tree";
-					result = Z_DATA_ERROR;
-				}
-				return result;
-			}
-
-			// build distance tree
-			initWorkArea(288);
-			result = huft_build(c, nl, nd, 0, cpdist, cpdext, td, bd, hp, hn, v);
-
-			if (result != Z_OK || (bd[0] === 0 && nl > 257)) {
-				if (result == Z_DATA_ERROR) {
-					z.msg = "oversubscribed distance tree";
-				} else if (result == Z_BUF_ERROR) {
-					z.msg = "incomplete distance tree";
-					result = Z_DATA_ERROR;
-				} else if (result != Z_MEM_ERROR) {
-					z.msg = "empty distance tree with lengths";
-					result = Z_DATA_ERROR;
-				}
-				return result;
-			}
-
-			return Z_OK;
-		};
-
+		// Return Z_BUF_ERROR if we were given an incomplete table
+		return y !== 0 && g != 1 ? inflate_Z_BUF_ERROR : inflate_Z_OK;
 	}
 
-	InfTree.inflate_trees_fixed = function (bl, // literal desired/actual bit depth
-		bd, // distance desired/actual bit depth
-		tl,// literal/length tree result
-		td// distance tree result
+	function initWorkArea(vsize) {
+		let i;
+		if (!hn) {
+			hn = []; // []; //new Array(1);
+			v = []; // new Array(vsize);
+			c = new Int32Array(BMAX + 1); // new Array(BMAX + 1);
+			r = []; // new Array(3);
+			u = new Int32Array(BMAX); // new Array(BMAX);
+			x = new Int32Array(BMAX + 1); // new Array(BMAX + 1);
+		}
+		if (v.length < vsize) {
+			v = []; // new Array(vsize);
+		}
+		for (i = 0; i < vsize; i++) {
+			v[i] = 0;
+		}
+		for (i = 0; i < BMAX + 1; i++) {
+			c[i] = 0;
+		}
+		for (i = 0; i < 3; i++) {
+			r[i] = 0;
+		}
+		// for(int i=0; i<BMAX; i++){u[i]=0;}
+		u.set(c.subarray(0, BMAX), 0);
+		// for(int i=0; i<BMAX+1; i++){x[i]=0;}
+		x.set(c.subarray(0, BMAX + 1), 0);
+	}
+
+	that.inflate_trees_bits = function (c, // 19 code lengths
+		bb, // bits tree desired/actual depth
+		tb, // bits tree result
+		hp, // space for trees
+		z // for messages
 	) {
-		bl[0] = fixed_bl;
-		bd[0] = fixed_bd;
-		tl[0] = fixed_tl;
-		td[0] = fixed_td;
-		return Z_OK;
+		let result;
+		initWorkArea(19);
+		hn[0] = 0;
+		result = huft_build(c, 0, 19, 19, null, null, tb, bb, hp, hn, v);
+
+		if (result == inflate_Z_DATA_ERROR) {
+			z.msg = "oversubscribed dynamic bit lengths tree";
+		} else if (result == inflate_Z_BUF_ERROR || bb[0] === 0) {
+			z.msg = "incomplete dynamic bit lengths tree";
+			result = inflate_Z_DATA_ERROR;
+		}
+		return result;
 	};
 
-	// InfCodes
+	that.inflate_trees_dynamic = function (nl, // number of literal/length codes
+		nd, // number of distance codes
+		c, // that many (total) code lengths
+		bl, // literal desired/actual bit depth
+		bd, // distance desired/actual bit depth
+		tl, // literal/length tree result
+		td, // distance tree result
+		hp, // space for trees
+		z // for messages
+	) {
+		let result;
 
-	// waiting for "i:"=input,
-	// "o:"=output,
-	// "x:"=nothing
-	const START = 0; // x: set up for LEN
-	const LEN = 1; // i: get length/literal/eob next
-	const LENEXT = 2; // i: getting length extra (have base)
-	const DIST = 3; // i: get distance next
-	const DISTEXT = 4;// i: getting distance extra
-	const COPY = 5; // o: copying bytes in win, waiting
-	// for space
-	const LIT = 6; // o: got literal, waiting for output
-	// space
-	const WASH = 7; // o: got eob, possibly still output
-	// waiting
-	const END = 8; // x: got eob and all data flushed
-	const BADCODE = 9;// x: got error
-
-	function InfCodes() {
-		const that = this;
-
-		let mode; // current inflate_codes mode
-
-		// mode dependent information
-		let len = 0;
-
-		let tree; // pointer into tree
-		let tree_index = 0;
-		let need = 0; // bits needed
-
-		let lit = 0;
-
-		// if EXT or COPY, where and how much
-		let get = 0; // bits to get for extra
-		let dist = 0; // distance back to copy from
-
-		let lbits = 0; // ltree bits decoded per branch
-		let dbits = 0; // dtree bits decoder per branch
-		let ltree; // literal/length/eob tree
-		let ltree_index = 0; // literal/length/eob tree
-		let dtree; // distance tree
-		let dtree_index = 0; // distance tree
-
-		// Called with number of bytes left to write in win at least 258
-		// (the maximum string length) and number of input bytes available
-		// at least ten. The ten bytes are six bytes for the longest length/
-		// distance pair plus four bytes for overloading the bit buffer.
-
-		function inflate_fast(bl, bd, tl, tl_index, td, td_index, s, z) {
-			let t; // temporary pointer
-			let tp; // temporary pointer
-			let tp_index; // temporary pointer
-			let e; // extra bits or operation
-			let b; // bit buffer
-			let k; // bits in bit buffer
-			let p; // input data pointer
-			let n; // bytes available there
-			let q; // output win write pointer
-			let m; // bytes to end of win or read pointer
-			let ml; // mask for literal/length tree
-			let md; // mask for distance tree
-			let c; // bytes to copy
-			let d; // distance back to copy from
-			let r; // copy source pointer
-
-			let tp_index_t_3; // (tp_index+t)*3
-
-			// load input, output, bit values
-			p = z.next_in_index;
-			n = z.avail_in;
-			b = s.bitb;
-			k = s.bitk;
-			q = s.write;
-			m = q < s.read ? s.read - q - 1 : s.end - q;
-
-			// initialize masks
-			ml = inflate_mask[bl];
-			md = inflate_mask[bd];
-
-			// do until not enough input or output space for fast loop
-			do { // assume called with m >= 258 && n >= 10
-				// get literal/length code
-				while (k < (20)) { // max bits for literal/length code
-					n--;
-					b |= (z.read_byte(p++) & 0xff) << k;
-					k += 8;
-				}
-
-				t = b & ml;
-				tp = tl;
-				tp_index = tl_index;
-				tp_index_t_3 = (tp_index + t) * 3;
-				if ((e = tp[tp_index_t_3]) === 0) {
-					b >>= (tp[tp_index_t_3 + 1]);
-					k -= (tp[tp_index_t_3 + 1]);
-
-					s.win[q++] = /* (byte) */tp[tp_index_t_3 + 2];
-					m--;
-					continue;
-				}
-				do {
-
-					b >>= (tp[tp_index_t_3 + 1]);
-					k -= (tp[tp_index_t_3 + 1]);
-
-					if ((e & 16) !== 0) {
-						e &= 15;
-						c = tp[tp_index_t_3 + 2] + (/* (int) */b & inflate_mask[e]);
-
-						b >>= e;
-						k -= e;
-
-						// decode distance base of block to copy
-						while (k < (15)) { // max bits for distance code
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						t = b & md;
-						tp = td;
-						tp_index = td_index;
-						tp_index_t_3 = (tp_index + t) * 3;
-						e = tp[tp_index_t_3];
-
-						do {
-
-							b >>= (tp[tp_index_t_3 + 1]);
-							k -= (tp[tp_index_t_3 + 1]);
-
-							if ((e & 16) !== 0) {
-								// get extra bits to add to distance base
-								e &= 15;
-								while (k < (e)) { // get extra bits (up to 13)
-									n--;
-									b |= (z.read_byte(p++) & 0xff) << k;
-									k += 8;
-								}
-
-								d = tp[tp_index_t_3 + 2] + (b & inflate_mask[e]);
-
-								b >>= (e);
-								k -= (e);
-
-								// do the copy
-								m -= c;
-								if (q >= d) { // offset before dest
-									// just copy
-									r = q - d;
-									if (q - r > 0 && 2 > (q - r)) {
-										s.win[q++] = s.win[r++]; // minimum
-										// count is
-										// three,
-										s.win[q++] = s.win[r++]; // so unroll
-										// loop a
-										// little
-										c -= 2;
-									} else {
-										s.win.set(s.win.subarray(r, r + 2), q);
-										q += 2;
-										r += 2;
-										c -= 2;
-									}
-								} else { // else offset after destination
-									r = q - d;
-									do {
-										r += s.end; // force pointer in win
-									} while (r < 0); // covers invalid distances
-									e = s.end - r;
-									if (c > e) { // if source crosses,
-										c -= e; // wrapped copy
-										if (q - r > 0 && e > (q - r)) {
-											do {
-												s.win[q++] = s.win[r++];
-											} while (--e !== 0);
-										} else {
-											s.win.set(s.win.subarray(r, r + e), q);
-											q += e;
-											r += e;
-											e = 0;
-										}
-										r = 0; // copy rest from start of win
-									}
-
-								}
-
-								// copy all or what's left
-								if (q - r > 0 && c > (q - r)) {
-									do {
-										s.win[q++] = s.win[r++];
-									} while (--c !== 0);
-								} else {
-									s.win.set(s.win.subarray(r, r + c), q);
-									q += c;
-									r += c;
-									c = 0;
-								}
-								break;
-							} else if ((e & 64) === 0) {
-								t += tp[tp_index_t_3 + 2];
-								t += (b & inflate_mask[e]);
-								tp_index_t_3 = (tp_index + t) * 3;
-								e = tp[tp_index_t_3];
-							} else {
-								z.msg = "invalid distance code";
-
-								c = z.avail_in - n;
-								c = (k >> 3) < c ? k >> 3 : c;
-								n += c;
-								p -= c;
-								k -= c << 3;
-
-								s.bitb = b;
-								s.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								s.write = q;
-
-								return Z_DATA_ERROR;
-							}
-							// eslint-disable-next-line no-constant-condition
-						} while (true);
-						break;
-					}
-
-					if ((e & 64) === 0) {
-						t += tp[tp_index_t_3 + 2];
-						t += (b & inflate_mask[e]);
-						tp_index_t_3 = (tp_index + t) * 3;
-						if ((e = tp[tp_index_t_3]) === 0) {
-
-							b >>= (tp[tp_index_t_3 + 1]);
-							k -= (tp[tp_index_t_3 + 1]);
-
-							s.win[q++] = /* (byte) */tp[tp_index_t_3 + 2];
-							m--;
-							break;
-						}
-					} else if ((e & 32) !== 0) {
-
-						c = z.avail_in - n;
-						c = (k >> 3) < c ? k >> 3 : c;
-						n += c;
-						p -= c;
-						k -= c << 3;
-
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-
-						return Z_STREAM_END;
-					} else {
-						z.msg = "invalid literal/length code";
-
-						c = z.avail_in - n;
-						c = (k >> 3) < c ? k >> 3 : c;
-						n += c;
-						p -= c;
-						k -= c << 3;
-
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-
-						return Z_DATA_ERROR;
-					}
-					// eslint-disable-next-line no-constant-condition
-				} while (true);
-			} while (m >= 258 && n >= 10);
-
-			// not enough input or output--restore pointers and return
-			c = z.avail_in - n;
-			c = (k >> 3) < c ? k >> 3 : c;
-			n += c;
-			p -= c;
-			k -= c << 3;
-
-			s.bitb = b;
-			s.bitk = k;
-			z.avail_in = n;
-			z.total_in += p - z.next_in_index;
-			z.next_in_index = p;
-			s.write = q;
-
-			return Z_OK;
+		// build literal/length tree
+		initWorkArea(288);
+		hn[0] = 0;
+		result = huft_build(c, 0, nl, 257, cplens, cplext, tl, bl, hp, hn, v);
+		if (result != inflate_Z_OK || bl[0] === 0) {
+			if (result == inflate_Z_DATA_ERROR) {
+				z.msg = "oversubscribed literal/length tree";
+			} else if (result != Z_MEM_ERROR) {
+				z.msg = "incomplete literal/length tree";
+				result = inflate_Z_DATA_ERROR;
+			}
+			return result;
 		}
 
-		that.init = function (bl, bd, tl, tl_index, td, td_index) {
-			mode = START;
-			lbits = /* (byte) */bl;
-			dbits = /* (byte) */bd;
-			ltree = tl;
-			ltree_index = tl_index;
-			dtree = td;
-			dtree_index = td_index;
-			tree = null;
-		};
+		// build distance tree
+		initWorkArea(288);
+		result = huft_build(c, nl, nd, 0, cpdist, cpdext, td, bd, hp, hn, v);
 
-		that.proc = function (s, z, r) {
-			let j; // temporary storage
-			let tindex; // temporary pointer
-			let e; // extra bits or operation
-			let b = 0; // bit buffer
-			let k = 0; // bits in bit buffer
-			let p = 0; // input data pointer
-			let n; // bytes available there
-			let q; // output win write pointer
-			let m; // bytes to end of win or read pointer
-			let f; // pointer to copy strings from
+		if (result != inflate_Z_OK || (bd[0] === 0 && nl > 257)) {
+			if (result == inflate_Z_DATA_ERROR) {
+				z.msg = "oversubscribed distance tree";
+			} else if (result == inflate_Z_BUF_ERROR) {
+				z.msg = "incomplete distance tree";
+				result = inflate_Z_DATA_ERROR;
+			} else if (result != Z_MEM_ERROR) {
+				z.msg = "empty distance tree with lengths";
+				result = inflate_Z_DATA_ERROR;
+			}
+			return result;
+		}
 
-			// copy input/output information to locals (UPDATE macro restores)
-			p = z.next_in_index;
-			n = z.avail_in;
-			b = s.bitb;
-			k = s.bitk;
-			q = s.write;
-			m = q < s.read ? s.read - q - 1 : s.end - q;
+		return inflate_Z_OK;
+	};
 
-			// process input and output based on current state
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				switch (mode) {
-					// waiting for "i:"=input, "o:"=output, "x:"=nothing
-					case START: // x: set up for LEN
-						if (m >= 258 && n >= 10) {
+}
+
+InfTree.inflate_trees_fixed = function (bl, // literal desired/actual bit depth
+	bd, // distance desired/actual bit depth
+	tl,// literal/length tree result
+	td// distance tree result
+) {
+	bl[0] = fixed_bl;
+	bd[0] = fixed_bd;
+	tl[0] = fixed_tl;
+	td[0] = fixed_td;
+	return inflate_Z_OK;
+};
+
+// InfCodes
+
+// waiting for "i:"=input,
+// "o:"=output,
+// "x:"=nothing
+const START = 0; // x: set up for LEN
+const LEN = 1; // i: get length/literal/eob next
+const LENEXT = 2; // i: getting length extra (have base)
+const DIST = 3; // i: get distance next
+const DISTEXT = 4;// i: getting distance extra
+const COPY = 5; // o: copying bytes in win, waiting
+// for space
+const LIT = 6; // o: got literal, waiting for output
+// space
+const WASH = 7; // o: got eob, possibly still output
+// waiting
+const END = 8; // x: got eob and all data flushed
+const BADCODE = 9;// x: got error
+
+function InfCodes() {
+	const that = this;
+
+	let mode; // current inflate_codes mode
+
+	// mode dependent information
+	let len = 0;
+
+	let tree; // pointer into tree
+	let tree_index = 0;
+	let need = 0; // bits needed
+
+	let lit = 0;
+
+	// if EXT or COPY, where and how much
+	let get = 0; // bits to get for extra
+	let dist = 0; // distance back to copy from
+
+	let lbits = 0; // ltree bits decoded per branch
+	let dbits = 0; // dtree bits decoder per branch
+	let ltree; // literal/length/eob tree
+	let ltree_index = 0; // literal/length/eob tree
+	let dtree; // distance tree
+	let dtree_index = 0; // distance tree
+
+	// Called with number of bytes left to write in win at least 258
+	// (the maximum string length) and number of input bytes available
+	// at least ten. The ten bytes are six bytes for the longest length/
+	// distance pair plus four bytes for overloading the bit buffer.
+
+	function inflate_fast(bl, bd, tl, tl_index, td, td_index, s, z) {
+		let t; // temporary pointer
+		let tp; // temporary pointer
+		let tp_index; // temporary pointer
+		let e; // extra bits or operation
+		let b; // bit buffer
+		let k; // bits in bit buffer
+		let p; // input data pointer
+		let n; // bytes available there
+		let q; // output win write pointer
+		let m; // bytes to end of win or read pointer
+		let ml; // mask for literal/length tree
+		let md; // mask for distance tree
+		let c; // bytes to copy
+		let d; // distance back to copy from
+		let r; // copy source pointer
+
+		let tp_index_t_3; // (tp_index+t)*3
+
+		// load input, output, bit values
+		p = z.next_in_index;
+		n = z.avail_in;
+		b = s.bitb;
+		k = s.bitk;
+		q = s.write;
+		m = q < s.read ? s.read - q - 1 : s.end - q;
+
+		// initialize masks
+		ml = inflate_mask[bl];
+		md = inflate_mask[bd];
+
+		// do until not enough input or output space for fast loop
+		do { // assume called with m >= 258 && n >= 10
+			// get literal/length code
+			while (k < (20)) { // max bits for literal/length code
+				n--;
+				b |= (z.read_byte(p++) & 0xff) << k;
+				k += 8;
+			}
+
+			t = b & ml;
+			tp = tl;
+			tp_index = tl_index;
+			tp_index_t_3 = (tp_index + t) * 3;
+			if ((e = tp[tp_index_t_3]) === 0) {
+				b >>= (tp[tp_index_t_3 + 1]);
+				k -= (tp[tp_index_t_3 + 1]);
+
+				s.win[q++] = /* (byte) */tp[tp_index_t_3 + 2];
+				m--;
+				continue;
+			}
+			do {
+
+				b >>= (tp[tp_index_t_3 + 1]);
+				k -= (tp[tp_index_t_3 + 1]);
+
+				if ((e & 16) !== 0) {
+					e &= 15;
+					c = tp[tp_index_t_3 + 2] + (/* (int) */b & inflate_mask[e]);
+
+					b >>= e;
+					k -= e;
+
+					// decode distance base of block to copy
+					while (k < (15)) { // max bits for distance code
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					t = b & md;
+					tp = td;
+					tp_index = td_index;
+					tp_index_t_3 = (tp_index + t) * 3;
+					e = tp[tp_index_t_3];
+
+					do {
+
+						b >>= (tp[tp_index_t_3 + 1]);
+						k -= (tp[tp_index_t_3 + 1]);
+
+						if ((e & 16) !== 0) {
+							// get extra bits to add to distance base
+							e &= 15;
+							while (k < (e)) { // get extra bits (up to 13)
+								n--;
+								b |= (z.read_byte(p++) & 0xff) << k;
+								k += 8;
+							}
+
+							d = tp[tp_index_t_3 + 2] + (b & inflate_mask[e]);
+
+							b >>= (e);
+							k -= (e);
+
+							// do the copy
+							m -= c;
+							if (q >= d) { // offset before dest
+								// just copy
+								r = q - d;
+								if (q - r > 0 && 2 > (q - r)) {
+									s.win[q++] = s.win[r++]; // minimum
+									// count is
+									// three,
+									s.win[q++] = s.win[r++]; // so unroll
+									// loop a
+									// little
+									c -= 2;
+								} else {
+									s.win.set(s.win.subarray(r, r + 2), q);
+									q += 2;
+									r += 2;
+									c -= 2;
+								}
+							} else { // else offset after destination
+								r = q - d;
+								do {
+									r += s.end; // force pointer in win
+								} while (r < 0); // covers invalid distances
+								e = s.end - r;
+								if (c > e) { // if source crosses,
+									c -= e; // wrapped copy
+									if (q - r > 0 && e > (q - r)) {
+										do {
+											s.win[q++] = s.win[r++];
+										} while (--e !== 0);
+									} else {
+										s.win.set(s.win.subarray(r, r + e), q);
+										q += e;
+										r += e;
+										e = 0;
+									}
+									r = 0; // copy rest from start of win
+								}
+
+							}
+
+							// copy all or what's left
+							if (q - r > 0 && c > (q - r)) {
+								do {
+									s.win[q++] = s.win[r++];
+								} while (--c !== 0);
+							} else {
+								s.win.set(s.win.subarray(r, r + c), q);
+								q += c;
+								r += c;
+								c = 0;
+							}
+							break;
+						} else if ((e & 64) === 0) {
+							t += tp[tp_index_t_3 + 2];
+							t += (b & inflate_mask[e]);
+							tp_index_t_3 = (tp_index + t) * 3;
+							e = tp[tp_index_t_3];
+						} else {
+							z.msg = "invalid distance code";
+
+							c = z.avail_in - n;
+							c = (k >> 3) < c ? k >> 3 : c;
+							n += c;
+							p -= c;
+							k -= c << 3;
 
 							s.bitb = b;
 							s.bitk = k;
@@ -8077,240 +7947,323 @@ const ZipInflate = (() => {
 							z.total_in += p - z.next_in_index;
 							z.next_in_index = p;
 							s.write = q;
-							r = inflate_fast(lbits, dbits, ltree, ltree_index, dtree, dtree_index, s, z);
 
-							p = z.next_in_index;
-							n = z.avail_in;
-							b = s.bitb;
-							k = s.bitk;
-							q = s.write;
-							m = q < s.read ? s.read - q - 1 : s.end - q;
-
-							if (r != Z_OK) {
-								mode = r == Z_STREAM_END ? WASH : BADCODE;
-								break;
-							}
+							return inflate_Z_DATA_ERROR;
 						}
-						need = lbits;
-						tree = ltree;
-						tree_index = ltree_index;
+						// eslint-disable-next-line no-constant-condition
+					} while (true);
+					break;
+				}
 
-						mode = LEN;
-					/* falls through */
-					case LEN: // i: get length/literal/eob next
-						j = need;
+				if ((e & 64) === 0) {
+					t += tp[tp_index_t_3 + 2];
+					t += (b & inflate_mask[e]);
+					tp_index_t_3 = (tp_index + t) * 3;
+					if ((e = tp[tp_index_t_3]) === 0) {
 
-						while (k < (j)) {
-							if (n !== 0)
-								r = Z_OK;
-							else {
+						b >>= (tp[tp_index_t_3 + 1]);
+						k -= (tp[tp_index_t_3 + 1]);
 
-								s.bitb = b;
-								s.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								s.write = q;
-								return s.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						tindex = (tree_index + (b & inflate_mask[j])) * 3;
-
-						b >>>= (tree[tindex + 1]);
-						k -= (tree[tindex + 1]);
-
-						e = tree[tindex];
-
-						if (e === 0) { // literal
-							lit = tree[tindex + 2];
-							mode = LIT;
-							break;
-						}
-						if ((e & 16) !== 0) { // length
-							get = e & 15;
-							len = tree[tindex + 2];
-							mode = LENEXT;
-							break;
-						}
-						if ((e & 64) === 0) { // next table
-							need = e;
-							tree_index = tindex / 3 + tree[tindex + 2];
-							break;
-						}
-						if ((e & 32) !== 0) { // end of block
-							mode = WASH;
-							break;
-						}
-						mode = BADCODE; // invalid code
-						z.msg = "invalid literal/length code";
-						r = Z_DATA_ERROR;
-
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-						return s.inflate_flush(z, r);
-
-					case LENEXT: // i: getting length extra (have base)
-						j = get;
-
-						while (k < (j)) {
-							if (n !== 0)
-								r = Z_OK;
-							else {
-
-								s.bitb = b;
-								s.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								s.write = q;
-								return s.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						len += (b & inflate_mask[j]);
-
-						b >>= j;
-						k -= j;
-
-						need = dbits;
-						tree = dtree;
-						tree_index = dtree_index;
-						mode = DIST;
-					/* falls through */
-					case DIST: // i: get distance next
-						j = need;
-
-						while (k < (j)) {
-							if (n !== 0)
-								r = Z_OK;
-							else {
-
-								s.bitb = b;
-								s.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								s.write = q;
-								return s.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						tindex = (tree_index + (b & inflate_mask[j])) * 3;
-
-						b >>= tree[tindex + 1];
-						k -= tree[tindex + 1];
-
-						e = (tree[tindex]);
-						if ((e & 16) !== 0) { // distance
-							get = e & 15;
-							dist = tree[tindex + 2];
-							mode = DISTEXT;
-							break;
-						}
-						if ((e & 64) === 0) { // next table
-							need = e;
-							tree_index = tindex / 3 + tree[tindex + 2];
-							break;
-						}
-						mode = BADCODE; // invalid code
-						z.msg = "invalid distance code";
-						r = Z_DATA_ERROR;
-
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-						return s.inflate_flush(z, r);
-
-					case DISTEXT: // i: getting distance extra
-						j = get;
-
-						while (k < (j)) {
-							if (n !== 0)
-								r = Z_OK;
-							else {
-
-								s.bitb = b;
-								s.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								s.write = q;
-								return s.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						dist += (b & inflate_mask[j]);
-
-						b >>= j;
-						k -= j;
-
-						mode = COPY;
-					/* falls through */
-					case COPY: // o: copying bytes in win, waiting for space
-						f = q - dist;
-						while (f < 0) { // modulo win size-"while" instead
-							f += s.end; // of "if" handles invalid distances
-						}
-						while (len !== 0) {
-
-							if (m === 0) {
-								if (q == s.end && s.read !== 0) {
-									q = 0;
-									m = q < s.read ? s.read - q - 1 : s.end - q;
-								}
-								if (m === 0) {
-									s.write = q;
-									r = s.inflate_flush(z, r);
-									q = s.write;
-									m = q < s.read ? s.read - q - 1 : s.end - q;
-
-									if (q == s.end && s.read !== 0) {
-										q = 0;
-										m = q < s.read ? s.read - q - 1 : s.end - q;
-									}
-
-									if (m === 0) {
-										s.bitb = b;
-										s.bitk = k;
-										z.avail_in = n;
-										z.total_in += p - z.next_in_index;
-										z.next_in_index = p;
-										s.write = q;
-										return s.inflate_flush(z, r);
-									}
-								}
-							}
-
-							s.win[q++] = s.win[f++];
-							m--;
-
-							if (f == s.end)
-								f = 0;
-							len--;
-						}
-						mode = START;
+						s.win[q++] = /* (byte) */tp[tp_index_t_3 + 2];
+						m--;
 						break;
-					case LIT: // o: got literal, waiting for output space
+					}
+				} else if ((e & 32) !== 0) {
+
+					c = z.avail_in - n;
+					c = (k >> 3) < c ? k >> 3 : c;
+					n += c;
+					p -= c;
+					k -= c << 3;
+
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+
+					return inflate_Z_STREAM_END;
+				} else {
+					z.msg = "invalid literal/length code";
+
+					c = z.avail_in - n;
+					c = (k >> 3) < c ? k >> 3 : c;
+					n += c;
+					p -= c;
+					k -= c << 3;
+
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+
+					return inflate_Z_DATA_ERROR;
+				}
+				// eslint-disable-next-line no-constant-condition
+			} while (true);
+		} while (m >= 258 && n >= 10);
+
+		// not enough input or output--restore pointers and return
+		c = z.avail_in - n;
+		c = (k >> 3) < c ? k >> 3 : c;
+		n += c;
+		p -= c;
+		k -= c << 3;
+
+		s.bitb = b;
+		s.bitk = k;
+		z.avail_in = n;
+		z.total_in += p - z.next_in_index;
+		z.next_in_index = p;
+		s.write = q;
+
+		return inflate_Z_OK;
+	}
+
+	that.init = function (bl, bd, tl, tl_index, td, td_index) {
+		mode = START;
+		lbits = /* (byte) */bl;
+		dbits = /* (byte) */bd;
+		ltree = tl;
+		ltree_index = tl_index;
+		dtree = td;
+		dtree_index = td_index;
+		tree = null;
+	};
+
+	that.proc = function (s, z, r) {
+		let j; // temporary storage
+		let tindex; // temporary pointer
+		let e; // extra bits or operation
+		let b = 0; // bit buffer
+		let k = 0; // bits in bit buffer
+		let p = 0; // input data pointer
+		let n; // bytes available there
+		let q; // output win write pointer
+		let m; // bytes to end of win or read pointer
+		let f; // pointer to copy strings from
+
+		// copy input/output information to locals (UPDATE macro restores)
+		p = z.next_in_index;
+		n = z.avail_in;
+		b = s.bitb;
+		k = s.bitk;
+		q = s.write;
+		m = q < s.read ? s.read - q - 1 : s.end - q;
+
+		// process input and output based on current state
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			switch (mode) {
+				// waiting for "i:"=input, "o:"=output, "x:"=nothing
+				case START: // x: set up for LEN
+					if (m >= 258 && n >= 10) {
+
+						s.bitb = b;
+						s.bitk = k;
+						z.avail_in = n;
+						z.total_in += p - z.next_in_index;
+						z.next_in_index = p;
+						s.write = q;
+						r = inflate_fast(lbits, dbits, ltree, ltree_index, dtree, dtree_index, s, z);
+
+						p = z.next_in_index;
+						n = z.avail_in;
+						b = s.bitb;
+						k = s.bitk;
+						q = s.write;
+						m = q < s.read ? s.read - q - 1 : s.end - q;
+
+						if (r != inflate_Z_OK) {
+							mode = r == inflate_Z_STREAM_END ? WASH : BADCODE;
+							break;
+						}
+					}
+					need = lbits;
+					tree = ltree;
+					tree_index = ltree_index;
+
+					mode = LEN;
+				/* falls through */
+				case LEN: // i: get length/literal/eob next
+					j = need;
+
+					while (k < (j)) {
+						if (n !== 0)
+							r = inflate_Z_OK;
+						else {
+
+							s.bitb = b;
+							s.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							s.write = q;
+							return s.inflate_flush(z, r);
+						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					tindex = (tree_index + (b & inflate_mask[j])) * 3;
+
+					b >>>= (tree[tindex + 1]);
+					k -= (tree[tindex + 1]);
+
+					e = tree[tindex];
+
+					if (e === 0) { // literal
+						lit = tree[tindex + 2];
+						mode = LIT;
+						break;
+					}
+					if ((e & 16) !== 0) { // length
+						get = e & 15;
+						len = tree[tindex + 2];
+						mode = LENEXT;
+						break;
+					}
+					if ((e & 64) === 0) { // next table
+						need = e;
+						tree_index = tindex / 3 + tree[tindex + 2];
+						break;
+					}
+					if ((e & 32) !== 0) { // end of block
+						mode = WASH;
+						break;
+					}
+					mode = BADCODE; // invalid code
+					z.msg = "invalid literal/length code";
+					r = inflate_Z_DATA_ERROR;
+
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+					return s.inflate_flush(z, r);
+
+				case LENEXT: // i: getting length extra (have base)
+					j = get;
+
+					while (k < (j)) {
+						if (n !== 0)
+							r = inflate_Z_OK;
+						else {
+
+							s.bitb = b;
+							s.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							s.write = q;
+							return s.inflate_flush(z, r);
+						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					len += (b & inflate_mask[j]);
+
+					b >>= j;
+					k -= j;
+
+					need = dbits;
+					tree = dtree;
+					tree_index = dtree_index;
+					mode = DIST;
+				/* falls through */
+				case DIST: // i: get distance next
+					j = need;
+
+					while (k < (j)) {
+						if (n !== 0)
+							r = inflate_Z_OK;
+						else {
+
+							s.bitb = b;
+							s.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							s.write = q;
+							return s.inflate_flush(z, r);
+						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					tindex = (tree_index + (b & inflate_mask[j])) * 3;
+
+					b >>= tree[tindex + 1];
+					k -= tree[tindex + 1];
+
+					e = (tree[tindex]);
+					if ((e & 16) !== 0) { // distance
+						get = e & 15;
+						dist = tree[tindex + 2];
+						mode = DISTEXT;
+						break;
+					}
+					if ((e & 64) === 0) { // next table
+						need = e;
+						tree_index = tindex / 3 + tree[tindex + 2];
+						break;
+					}
+					mode = BADCODE; // invalid code
+					z.msg = "invalid distance code";
+					r = inflate_Z_DATA_ERROR;
+
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+					return s.inflate_flush(z, r);
+
+				case DISTEXT: // i: getting distance extra
+					j = get;
+
+					while (k < (j)) {
+						if (n !== 0)
+							r = inflate_Z_OK;
+						else {
+
+							s.bitb = b;
+							s.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							s.write = q;
+							return s.inflate_flush(z, r);
+						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					dist += (b & inflate_mask[j]);
+
+					b >>= j;
+					k -= j;
+
+					mode = COPY;
+				/* falls through */
+				case COPY: // o: copying bytes in win, waiting for space
+					f = q - dist;
+					while (f < 0) { // modulo win size-"while" instead
+						f += s.end; // of "if" handles invalid distances
+					}
+					while (len !== 0) {
+
 						if (m === 0) {
 							if (q == s.end && s.read !== 0) {
 								q = 0;
@@ -8326,6 +8279,7 @@ const ZipInflate = (() => {
 									q = 0;
 									m = q < s.read ? s.read - q - 1 : s.end - q;
 								}
+
 								if (m === 0) {
 									s.bitb = b;
 									s.bitk = k;
@@ -8337,38 +8291,63 @@ const ZipInflate = (() => {
 								}
 							}
 						}
-						r = Z_OK;
 
-						s.win[q++] = /* (byte) */lit;
+						s.win[q++] = s.win[f++];
 						m--;
 
-						mode = START;
-						break;
-					case WASH: // o: got eob, possibly more output
-						if (k > 7) { // return unused byte, if any
-							k -= 8;
-							n++;
-							p--; // can always return one
+						if (f == s.end)
+							f = 0;
+						len--;
+					}
+					mode = START;
+					break;
+				case LIT: // o: got literal, waiting for output space
+					if (m === 0) {
+						if (q == s.end && s.read !== 0) {
+							q = 0;
+							m = q < s.read ? s.read - q - 1 : s.end - q;
 						}
-
-						s.write = q;
-						r = s.inflate_flush(z, r);
-						q = s.write;
-						m = q < s.read ? s.read - q - 1 : s.end - q;
-
-						if (s.read != s.write) {
-							s.bitb = b;
-							s.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
+						if (m === 0) {
 							s.write = q;
-							return s.inflate_flush(z, r);
+							r = s.inflate_flush(z, r);
+							q = s.write;
+							m = q < s.read ? s.read - q - 1 : s.end - q;
+
+							if (q == s.end && s.read !== 0) {
+								q = 0;
+								m = q < s.read ? s.read - q - 1 : s.end - q;
+							}
+							if (m === 0) {
+								s.bitb = b;
+								s.bitk = k;
+								z.avail_in = n;
+								z.total_in += p - z.next_in_index;
+								z.next_in_index = p;
+								s.write = q;
+								return s.inflate_flush(z, r);
+							}
 						}
-						mode = END;
-					/* falls through */
-					case END:
-						r = Z_STREAM_END;
+					}
+					r = inflate_Z_OK;
+
+					s.win[q++] = /* (byte) */lit;
+					m--;
+
+					mode = START;
+					break;
+				case WASH: // o: got eob, possibly more output
+					if (k > 7) { // return unused byte, if any
+						k -= 8;
+						n++;
+						p--; // can always return one
+					}
+
+					s.write = q;
+					r = s.inflate_flush(z, r);
+					q = s.write;
+					m = q < s.read ? s.read - q - 1 : s.end - q;
+
+					if (s.read != s.write) {
 						s.bitb = b;
 						s.bitk = k;
 						z.avail_in = n;
@@ -8376,449 +8355,376 @@ const ZipInflate = (() => {
 						z.next_in_index = p;
 						s.write = q;
 						return s.inflate_flush(z, r);
+					}
+					mode = END;
+				/* falls through */
+				case END:
+					r = inflate_Z_STREAM_END;
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+					return s.inflate_flush(z, r);
 
-					case BADCODE: // x: got error
+				case BADCODE: // x: got error
 
-						r = Z_DATA_ERROR;
+					r = inflate_Z_DATA_ERROR;
 
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-						return s.inflate_flush(z, r);
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+					return s.inflate_flush(z, r);
 
-					default:
-						r = Z_STREAM_ERROR;
+				default:
+					r = inflate_Z_STREAM_ERROR;
 
-						s.bitb = b;
-						s.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						s.write = q;
-						return s.inflate_flush(z, r);
-				}
+					s.bitb = b;
+					s.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					s.write = q;
+					return s.inflate_flush(z, r);
 			}
-		};
+		}
+	};
 
-		that.free = function () {
-			// ZFREE(z, c);
-		};
+	that.free = function () {
+		// ZFREE(z, c);
+	};
 
-	}
+}
 
-	// InfBlocks
+// InfBlocks
 
-	// Table for deflate from PKZIP's appnote.txt.
-	const border = [ // Order of the bit length code lengths
-		16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+// Table for deflate from PKZIP's appnote.txt.
+const border = [ // Order of the bit length code lengths
+	16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 
-	const TYPE = 0; // get type bits (3, including end bit)
-	const LENS = 1; // get lengths for stored
-	const STORED = 2;// processing stored block
-	const TABLE = 3; // get table lengths
-	const BTREE = 4; // get bit lengths tree for a dynamic
-	// block
-	const DTREE = 5; // get length, distance trees for a
-	// dynamic block
-	const CODES = 6; // processing fixed or dynamic block
-	const DRY = 7; // output remaining win bytes
-	const DONELOCKS = 8; // finished last block, done
-	const BADBLOCKS = 9; // ot a data error--stuck here
+const TYPE = 0; // get type bits (3, including end bit)
+const LENS = 1; // get lengths for stored
+const inflate_STORED = 2;// processing stored block
+const TABLE = 3; // get table lengths
+const BTREE = 4; // get bit lengths tree for a dynamic
+// block
+const DTREE = 5; // get length, distance trees for a
+// dynamic block
+const CODES = 6; // processing fixed or dynamic block
+const DRY = 7; // output remaining win bytes
+const DONELOCKS = 8; // finished last block, done
+const BADBLOCKS = 9; // ot a data error--stuck here
 
-	function InfBlocks(z, w) {
-		const that = this;
+function InfBlocks(z, w) {
+	const that = this;
 
-		let mode = TYPE; // current inflate_block mode
+	let mode = TYPE; // current inflate_block mode
 
-		let left = 0; // if STORED, bytes left to copy
+	let left = 0; // if STORED, bytes left to copy
 
-		let table = 0; // table lengths (14 bits)
-		let index = 0; // index into blens (or border)
-		let blens; // bit lengths of codes
-		const bb = [0]; // bit length tree depth
-		const tb = [0]; // bit length decoding tree
+	let table = 0; // table lengths (14 bits)
+	let index = 0; // index into blens (or border)
+	let blens; // bit lengths of codes
+	const bb = [0]; // bit length tree depth
+	const tb = [0]; // bit length decoding tree
 
-		const codes = new InfCodes(); // if CODES, current state
+	const codes = new InfCodes(); // if CODES, current state
 
-		let last = 0; // true if this block is the last block
+	let last = 0; // true if this block is the last block
 
-		let hufts = new Int32Array(MANY * 3); // single malloc for tree space
-		const check = 0; // check on output
-		const inftree = new InfTree();
+	let hufts = new Int32Array(MANY * 3); // single malloc for tree space
+	const check = 0; // check on output
+	const inftree = new InfTree();
 
-		that.bitk = 0; // bits in bit buffer
-		that.bitb = 0; // bit buffer
-		that.win = new Uint8Array(w); // sliding win
-		that.end = w; // one byte after sliding win
-		that.read = 0; // win read pointer
-		that.write = 0; // win write pointer
+	that.bitk = 0; // bits in bit buffer
+	that.bitb = 0; // bit buffer
+	that.win = new Uint8Array(w); // sliding win
+	that.end = w; // one byte after sliding win
+	that.read = 0; // win read pointer
+	that.write = 0; // win write pointer
 
-		that.reset = function (z, c) {
-			if (c)
-				c[0] = check;
-			// if (mode == BTREE || mode == DTREE) {
-			// }
-			if (mode == CODES) {
-				codes.free(z);
-			}
-			mode = TYPE;
-			that.bitk = 0;
-			that.bitb = 0;
-			that.read = that.write = 0;
-		};
+	that.reset = function (z, c) {
+		if (c)
+			c[0] = check;
+		// if (mode == BTREE || mode == DTREE) {
+		// }
+		if (mode == CODES) {
+			codes.free(z);
+		}
+		mode = TYPE;
+		that.bitk = 0;
+		that.bitb = 0;
+		that.read = that.write = 0;
+	};
 
-		that.reset(z, null);
+	that.reset(z, null);
 
-		// copy as much as possible from the sliding win to the output area
-		that.inflate_flush = function (z, r) {
-			let n;
-			let p;
-			let q;
+	// copy as much as possible from the sliding win to the output area
+	that.inflate_flush = function (z, r) {
+		let n;
+		let p;
+		let q;
 
-			// local copies of source and destination pointers
-			p = z.next_out_index;
-			q = that.read;
+		// local copies of source and destination pointers
+		p = z.next_out_index;
+		q = that.read;
 
-			// compute number of bytes to copy as far as end of win
-			n = /* (int) */((q <= that.write ? that.write : that.end) - q);
+		// compute number of bytes to copy as far as end of win
+		n = /* (int) */((q <= that.write ? that.write : that.end) - q);
+		if (n > z.avail_out)
+			n = z.avail_out;
+		if (n !== 0 && r == inflate_Z_BUF_ERROR)
+			r = inflate_Z_OK;
+
+		// update counters
+		z.avail_out -= n;
+		z.total_out += n;
+
+		// copy as far as end of win
+		z.next_out.set(that.win.subarray(q, q + n), p);
+		p += n;
+		q += n;
+
+		// see if more to copy at beginning of win
+		if (q == that.end) {
+			// wrap pointers
+			q = 0;
+			if (that.write == that.end)
+				that.write = 0;
+
+			// compute bytes to copy
+			n = that.write - q;
 			if (n > z.avail_out)
 				n = z.avail_out;
-			if (n !== 0 && r == Z_BUF_ERROR)
-				r = Z_OK;
+			if (n !== 0 && r == inflate_Z_BUF_ERROR)
+				r = inflate_Z_OK;
 
 			// update counters
 			z.avail_out -= n;
 			z.total_out += n;
 
-			// copy as far as end of win
+			// copy
 			z.next_out.set(that.win.subarray(q, q + n), p);
 			p += n;
 			q += n;
+		}
 
-			// see if more to copy at beginning of win
-			if (q == that.end) {
-				// wrap pointers
-				q = 0;
-				if (that.write == that.end)
-					that.write = 0;
+		// update pointers
+		z.next_out_index = p;
+		that.read = q;
 
-				// compute bytes to copy
-				n = that.write - q;
-				if (n > z.avail_out)
-					n = z.avail_out;
-				if (n !== 0 && r == Z_BUF_ERROR)
-					r = Z_OK;
+		// done
+		return r;
+	};
 
-				// update counters
-				z.avail_out -= n;
-				z.total_out += n;
+	that.proc = function (z, r) {
+		let t; // temporary storage
+		let b; // bit buffer
+		let k; // bits in bit buffer
+		let p; // input data pointer
+		let n; // bytes available there
+		let q; // output win write pointer
+		let m; // bytes to end of win or read pointer
 
-				// copy
-				z.next_out.set(that.win.subarray(q, q + n), p);
-				p += n;
-				q += n;
-			}
+		let i;
 
-			// update pointers
-			z.next_out_index = p;
-			that.read = q;
+		// copy input/output information to locals (UPDATE macro restores)
+		// {
+		p = z.next_in_index;
+		n = z.avail_in;
+		b = that.bitb;
+		k = that.bitk;
+		// }
+		// {
+		q = that.write;
+		m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+		// }
 
-			// done
-			return r;
-		};
+		// process input based on current state
+		// DEBUG dtree
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			let bl, bd, tl, td, bl_, bd_, tl_, td_;
+			switch (mode) {
+				case TYPE:
 
-		that.proc = function (z, r) {
-			let t; // temporary storage
-			let b; // bit buffer
-			let k; // bits in bit buffer
-			let p; // input data pointer
-			let n; // bytes available there
-			let q; // output win write pointer
-			let m; // bytes to end of win or read pointer
-
-			let i;
-
-			// copy input/output information to locals (UPDATE macro restores)
-			// {
-			p = z.next_in_index;
-			n = z.avail_in;
-			b = that.bitb;
-			k = that.bitk;
-			// }
-			// {
-			q = that.write;
-			m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
-			// }
-
-			// process input based on current state
-			// DEBUG dtree
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				let bl, bd, tl, td, bl_, bd_, tl_, td_;
-				switch (mode) {
-					case TYPE:
-
-						while (k < (3)) {
-							if (n !== 0) {
-								r = Z_OK;
-							} else {
-								that.bitb = b;
-								that.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								that.write = q;
-								return that.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-						t = /* (int) */(b & 7);
-						last = t & 1;
-
-						switch (t >>> 1) {
-							case 0: // stored
-								// {
-								b >>>= (3);
-								k -= (3);
-								// }
-								t = k & 7; // go to byte boundary
-
-								// {
-								b >>>= (t);
-								k -= (t);
-								// }
-								mode = LENS; // get length of stored block
-								break;
-							case 1: // fixed
-								// {
-								bl = []; // new Array(1);
-								bd = []; // new Array(1);
-								tl = [[]]; // new Array(1);
-								td = [[]]; // new Array(1);
-
-								InfTree.inflate_trees_fixed(bl, bd, tl, td);
-								codes.init(bl[0], bd[0], tl[0], 0, td[0], 0);
-								// }
-
-								// {
-								b >>>= (3);
-								k -= (3);
-								// }
-
-								mode = CODES;
-								break;
-							case 2: // dynamic
-
-								// {
-								b >>>= (3);
-								k -= (3);
-								// }
-
-								mode = TABLE;
-								break;
-							case 3: // illegal
-
-								// {
-								b >>>= (3);
-								k -= (3);
-								// }
-								mode = BADBLOCKS;
-								z.msg = "invalid block type";
-								r = Z_DATA_ERROR;
-
-								that.bitb = b;
-								that.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								that.write = q;
-								return that.inflate_flush(z, r);
-						}
-						break;
-					case LENS:
-
-						while (k < (32)) {
-							if (n !== 0) {
-								r = Z_OK;
-							} else {
-								that.bitb = b;
-								that.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								that.write = q;
-								return that.inflate_flush(z, r);
-							}
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						if ((((~b) >>> 16) & 0xffff) != (b & 0xffff)) {
-							mode = BADBLOCKS;
-							z.msg = "invalid stored block lengths";
-							r = Z_DATA_ERROR;
-
-							that.bitb = b;
-							that.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
-							that.write = q;
-							return that.inflate_flush(z, r);
-						}
-						left = (b & 0xffff);
-						b = k = 0; // dump bits
-						mode = left !== 0 ? STORED : (last !== 0 ? DRY : TYPE);
-						break;
-					case STORED:
-						if (n === 0) {
-							that.bitb = b;
-							that.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
-							that.write = q;
-							return that.inflate_flush(z, r);
-						}
-
-						if (m === 0) {
-							if (q == that.end && that.read !== 0) {
-								q = 0;
-								m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
-							}
-							if (m === 0) {
-								that.write = q;
-								r = that.inflate_flush(z, r);
-								q = that.write;
-								m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
-								if (q == that.end && that.read !== 0) {
-									q = 0;
-									m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
-								}
-								if (m === 0) {
-									that.bitb = b;
-									that.bitk = k;
-									z.avail_in = n;
-									z.total_in += p - z.next_in_index;
-									z.next_in_index = p;
-									that.write = q;
-									return that.inflate_flush(z, r);
-								}
-							}
-						}
-						r = Z_OK;
-
-						t = left;
-						if (t > n)
-							t = n;
-						if (t > m)
-							t = m;
-						that.win.set(z.read_buf(p, t), q);
-						p += t;
-						n -= t;
-						q += t;
-						m -= t;
-						if ((left -= t) !== 0)
-							break;
-						mode = last !== 0 ? DRY : TYPE;
-						break;
-					case TABLE:
-
-						while (k < (14)) {
-							if (n !== 0) {
-								r = Z_OK;
-							} else {
-								that.bitb = b;
-								that.bitk = k;
-								z.avail_in = n;
-								z.total_in += p - z.next_in_index;
-								z.next_in_index = p;
-								that.write = q;
-								return that.inflate_flush(z, r);
-							}
-
-							n--;
-							b |= (z.read_byte(p++) & 0xff) << k;
-							k += 8;
-						}
-
-						table = t = (b & 0x3fff);
-						if ((t & 0x1f) > 29 || ((t >> 5) & 0x1f) > 29) {
-							mode = BADBLOCKS;
-							z.msg = "too many length or distance symbols";
-							r = Z_DATA_ERROR;
-
-							that.bitb = b;
-							that.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
-							that.write = q;
-							return that.inflate_flush(z, r);
-						}
-						t = 258 + (t & 0x1f) + ((t >> 5) & 0x1f);
-						if (!blens || blens.length < t) {
-							blens = []; // new Array(t);
+					while (k < (3)) {
+						if (n !== 0) {
+							r = inflate_Z_OK;
 						} else {
-							for (i = 0; i < t; i++) {
-								blens[i] = 0;
-							}
+							that.bitb = b;
+							that.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							that.write = q;
+							return that.inflate_flush(z, r);
 						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+					t = /* (int) */(b & 7);
+					last = t & 1;
 
-						// {
-						b >>>= (14);
-						k -= (14);
-						// }
+					switch (t >>> 1) {
+						case 0: // stored
+							// {
+							b >>>= (3);
+							k -= (3);
+							// }
+							t = k & 7; // go to byte boundary
 
-						index = 0;
-						mode = BTREE;
-					/* falls through */
-					case BTREE:
-						while (index < 4 + (table >>> 10)) {
-							while (k < (3)) {
-								if (n !== 0) {
-									r = Z_OK;
-								} else {
-									that.bitb = b;
-									that.bitk = k;
-									z.avail_in = n;
-									z.total_in += p - z.next_in_index;
-									z.next_in_index = p;
-									that.write = q;
-									return that.inflate_flush(z, r);
-								}
-								n--;
-								b |= (z.read_byte(p++) & 0xff) << k;
-								k += 8;
-							}
+							// {
+							b >>>= (t);
+							k -= (t);
+							// }
+							mode = LENS; // get length of stored block
+							break;
+						case 1: // fixed
+							// {
+							bl = []; // new Array(1);
+							bd = []; // new Array(1);
+							tl = [[]]; // new Array(1);
+							td = [[]]; // new Array(1);
 
-							blens[border[index++]] = b & 7;
+							InfTree.inflate_trees_fixed(bl, bd, tl, td);
+							codes.init(bl[0], bd[0], tl[0], 0, td[0], 0);
+							// }
 
 							// {
 							b >>>= (3);
 							k -= (3);
 							// }
-						}
 
-						while (index < 19) {
-							blens[border[index++]] = 0;
-						}
+							mode = CODES;
+							break;
+						case 2: // dynamic
 
-						bb[0] = 7;
-						t = inftree.inflate_trees_bits(blens, bb, tb, hufts, z);
-						if (t != Z_OK) {
-							r = t;
-							if (r == Z_DATA_ERROR) {
-								blens = null;
-								mode = BADBLOCKS;
+							// {
+							b >>>= (3);
+							k -= (3);
+							// }
+
+							mode = TABLE;
+							break;
+						case 3: // illegal
+
+							// {
+							b >>>= (3);
+							k -= (3);
+							// }
+							mode = BADBLOCKS;
+							z.msg = "invalid block type";
+							r = inflate_Z_DATA_ERROR;
+
+							that.bitb = b;
+							that.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							that.write = q;
+							return that.inflate_flush(z, r);
+					}
+					break;
+				case LENS:
+
+					while (k < (32)) {
+						if (n !== 0) {
+							r = inflate_Z_OK;
+						} else {
+							that.bitb = b;
+							that.bitk = k;
+							z.avail_in = n;
+							z.total_in += p - z.next_in_index;
+							z.next_in_index = p;
+							that.write = q;
+							return that.inflate_flush(z, r);
+						}
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					if ((((~b) >>> 16) & 0xffff) != (b & 0xffff)) {
+						mode = BADBLOCKS;
+						z.msg = "invalid stored block lengths";
+						r = inflate_Z_DATA_ERROR;
+
+						that.bitb = b;
+						that.bitk = k;
+						z.avail_in = n;
+						z.total_in += p - z.next_in_index;
+						z.next_in_index = p;
+						that.write = q;
+						return that.inflate_flush(z, r);
+					}
+					left = (b & 0xffff);
+					b = k = 0; // dump bits
+					mode = left !== 0 ? inflate_STORED : (last !== 0 ? DRY : TYPE);
+					break;
+				case inflate_STORED:
+					if (n === 0) {
+						that.bitb = b;
+						that.bitk = k;
+						z.avail_in = n;
+						z.total_in += p - z.next_in_index;
+						z.next_in_index = p;
+						that.write = q;
+						return that.inflate_flush(z, r);
+					}
+
+					if (m === 0) {
+						if (q == that.end && that.read !== 0) {
+							q = 0;
+							m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+						}
+						if (m === 0) {
+							that.write = q;
+							r = that.inflate_flush(z, r);
+							q = that.write;
+							m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+							if (q == that.end && that.read !== 0) {
+								q = 0;
+								m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
 							}
+							if (m === 0) {
+								that.bitb = b;
+								that.bitk = k;
+								z.avail_in = n;
+								z.total_in += p - z.next_in_index;
+								z.next_in_index = p;
+								that.write = q;
+								return that.inflate_flush(z, r);
+							}
+						}
+					}
+					r = inflate_Z_OK;
 
+					t = left;
+					if (t > n)
+						t = n;
+					if (t > m)
+						t = m;
+					that.win.set(z.read_buf(p, t), q);
+					p += t;
+					n -= t;
+					q += t;
+					m -= t;
+					if ((left -= t) !== 0)
+						break;
+					mode = last !== 0 ? DRY : TYPE;
+					break;
+				case TABLE:
+
+					while (k < (14)) {
+						if (n !== 0) {
+							r = inflate_Z_OK;
+						} else {
 							that.bitb = b;
 							that.bitk = k;
 							z.avail_in = n;
@@ -8828,24 +8734,141 @@ const ZipInflate = (() => {
 							return that.inflate_flush(z, r);
 						}
 
-						index = 0;
-						mode = DTREE;
-					/* falls through */
-					case DTREE:
-						// eslint-disable-next-line no-constant-condition
-						while (true) {
-							t = table;
-							if (index >= 258 + (t & 0x1f) + ((t >> 5) & 0x1f)) {
-								break;
+						n--;
+						b |= (z.read_byte(p++) & 0xff) << k;
+						k += 8;
+					}
+
+					table = t = (b & 0x3fff);
+					if ((t & 0x1f) > 29 || ((t >> 5) & 0x1f) > 29) {
+						mode = BADBLOCKS;
+						z.msg = "too many length or distance symbols";
+						r = inflate_Z_DATA_ERROR;
+
+						that.bitb = b;
+						that.bitk = k;
+						z.avail_in = n;
+						z.total_in += p - z.next_in_index;
+						z.next_in_index = p;
+						that.write = q;
+						return that.inflate_flush(z, r);
+					}
+					t = 258 + (t & 0x1f) + ((t >> 5) & 0x1f);
+					if (!blens || blens.length < t) {
+						blens = []; // new Array(t);
+					} else {
+						for (i = 0; i < t; i++) {
+							blens[i] = 0;
+						}
+					}
+
+					// {
+					b >>>= (14);
+					k -= (14);
+					// }
+
+					index = 0;
+					mode = BTREE;
+				/* falls through */
+				case BTREE:
+					while (index < 4 + (table >>> 10)) {
+						while (k < (3)) {
+							if (n !== 0) {
+								r = inflate_Z_OK;
+							} else {
+								that.bitb = b;
+								that.bitk = k;
+								z.avail_in = n;
+								z.total_in += p - z.next_in_index;
+								z.next_in_index = p;
+								that.write = q;
+								return that.inflate_flush(z, r);
 							}
+							n--;
+							b |= (z.read_byte(p++) & 0xff) << k;
+							k += 8;
+						}
 
-							let j, c;
+						blens[border[index++]] = b & 7;
 
-							t = bb[0];
+						// {
+						b >>>= (3);
+						k -= (3);
+						// }
+					}
 
-							while (k < (t)) {
+					while (index < 19) {
+						blens[border[index++]] = 0;
+					}
+
+					bb[0] = 7;
+					t = inftree.inflate_trees_bits(blens, bb, tb, hufts, z);
+					if (t != inflate_Z_OK) {
+						r = t;
+						if (r == inflate_Z_DATA_ERROR) {
+							blens = null;
+							mode = BADBLOCKS;
+						}
+
+						that.bitb = b;
+						that.bitk = k;
+						z.avail_in = n;
+						z.total_in += p - z.next_in_index;
+						z.next_in_index = p;
+						that.write = q;
+						return that.inflate_flush(z, r);
+					}
+
+					index = 0;
+					mode = DTREE;
+				/* falls through */
+				case DTREE:
+					// eslint-disable-next-line no-constant-condition
+					while (true) {
+						t = table;
+						if (index >= 258 + (t & 0x1f) + ((t >> 5) & 0x1f)) {
+							break;
+						}
+
+						let j, c;
+
+						t = bb[0];
+
+						while (k < (t)) {
+							if (n !== 0) {
+								r = inflate_Z_OK;
+							} else {
+								that.bitb = b;
+								that.bitk = k;
+								z.avail_in = n;
+								z.total_in += p - z.next_in_index;
+								z.next_in_index = p;
+								that.write = q;
+								return that.inflate_flush(z, r);
+							}
+							n--;
+							b |= (z.read_byte(p++) & 0xff) << k;
+							k += 8;
+						}
+
+						// if (tb[0] == -1) {
+						// System.err.println("null...");
+						// }
+
+						t = hufts[(tb[0] + (b & inflate_mask[t])) * 3 + 1];
+						c = hufts[(tb[0] + (b & inflate_mask[t])) * 3 + 2];
+
+						if (c < 16) {
+							b >>>= (t);
+							k -= (t);
+							blens[index++] = c;
+						} else { // c == 16..18
+							i = c == 18 ? 7 : c - 14;
+							j = c == 18 ? 11 : 3;
+
+							while (k < (t + i)) {
 								if (n !== 0) {
-									r = Z_OK;
+									r = inflate_Z_OK;
 								} else {
 									that.bitb = b;
 									that.bitk = k;
@@ -8860,147 +8883,57 @@ const ZipInflate = (() => {
 								k += 8;
 							}
 
-							// if (tb[0] == -1) {
-							// System.err.println("null...");
-							// }
+							b >>>= (t);
+							k -= (t);
 
-							t = hufts[(tb[0] + (b & inflate_mask[t])) * 3 + 1];
-							c = hufts[(tb[0] + (b & inflate_mask[t])) * 3 + 2];
+							j += (b & inflate_mask[i]);
 
-							if (c < 16) {
-								b >>>= (t);
-								k -= (t);
-								blens[index++] = c;
-							} else { // c == 16..18
-								i = c == 18 ? 7 : c - 14;
-								j = c == 18 ? 11 : 3;
+							b >>>= (i);
+							k -= (i);
 
-								while (k < (t + i)) {
-									if (n !== 0) {
-										r = Z_OK;
-									} else {
-										that.bitb = b;
-										that.bitk = k;
-										z.avail_in = n;
-										z.total_in += p - z.next_in_index;
-										z.next_in_index = p;
-										that.write = q;
-										return that.inflate_flush(z, r);
-									}
-									n--;
-									b |= (z.read_byte(p++) & 0xff) << k;
-									k += 8;
-								}
-
-								b >>>= (t);
-								k -= (t);
-
-								j += (b & inflate_mask[i]);
-
-								b >>>= (i);
-								k -= (i);
-
-								i = index;
-								t = table;
-								if (i + j > 258 + (t & 0x1f) + ((t >> 5) & 0x1f) || (c == 16 && i < 1)) {
-									blens = null;
-									mode = BADBLOCKS;
-									z.msg = "invalid bit length repeat";
-									r = Z_DATA_ERROR;
-
-									that.bitb = b;
-									that.bitk = k;
-									z.avail_in = n;
-									z.total_in += p - z.next_in_index;
-									z.next_in_index = p;
-									that.write = q;
-									return that.inflate_flush(z, r);
-								}
-
-								c = c == 16 ? blens[i - 1] : 0;
-								do {
-									blens[i++] = c;
-								} while (--j !== 0);
-								index = i;
-							}
-						}
-
-						tb[0] = -1;
-						// {
-						bl_ = []; // new Array(1);
-						bd_ = []; // new Array(1);
-						tl_ = []; // new Array(1);
-						td_ = []; // new Array(1);
-						bl_[0] = 9; // must be <= 9 for lookahead assumptions
-						bd_[0] = 6; // must be <= 9 for lookahead assumptions
-
-						t = table;
-						t = inftree.inflate_trees_dynamic(257 + (t & 0x1f), 1 + ((t >> 5) & 0x1f), blens, bl_, bd_, tl_, td_, hufts, z);
-
-						if (t != Z_OK) {
-							if (t == Z_DATA_ERROR) {
+							i = index;
+							t = table;
+							if (i + j > 258 + (t & 0x1f) + ((t >> 5) & 0x1f) || (c == 16 && i < 1)) {
 								blens = null;
 								mode = BADBLOCKS;
+								z.msg = "invalid bit length repeat";
+								r = inflate_Z_DATA_ERROR;
+
+								that.bitb = b;
+								that.bitk = k;
+								z.avail_in = n;
+								z.total_in += p - z.next_in_index;
+								z.next_in_index = p;
+								that.write = q;
+								return that.inflate_flush(z, r);
 							}
-							r = t;
 
-							that.bitb = b;
-							that.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
-							that.write = q;
-							return that.inflate_flush(z, r);
+							c = c == 16 ? blens[i - 1] : 0;
+							do {
+								blens[i++] = c;
+							} while (--j !== 0);
+							index = i;
 						}
-						codes.init(bl_[0], bd_[0], hufts, tl_[0], hufts, td_[0]);
-						// }
-						mode = CODES;
-					/* falls through */
-					case CODES:
-						that.bitb = b;
-						that.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						that.write = q;
+					}
 
-						if ((r = codes.proc(that, z, r)) != Z_STREAM_END) {
-							return that.inflate_flush(z, r);
-						}
-						r = Z_OK;
-						codes.free(z);
+					tb[0] = -1;
+					// {
+					bl_ = []; // new Array(1);
+					bd_ = []; // new Array(1);
+					tl_ = []; // new Array(1);
+					td_ = []; // new Array(1);
+					bl_[0] = 9; // must be <= 9 for lookahead assumptions
+					bd_[0] = 6; // must be <= 9 for lookahead assumptions
 
-						p = z.next_in_index;
-						n = z.avail_in;
-						b = that.bitb;
-						k = that.bitk;
-						q = that.write;
-						m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+					t = table;
+					t = inftree.inflate_trees_dynamic(257 + (t & 0x1f), 1 + ((t >> 5) & 0x1f), blens, bl_, bd_, tl_, td_, hufts, z);
 
-						if (last === 0) {
-							mode = TYPE;
-							break;
+					if (t != inflate_Z_OK) {
+						if (t == inflate_Z_DATA_ERROR) {
+							blens = null;
+							mode = BADBLOCKS;
 						}
-						mode = DRY;
-					/* falls through */
-					case DRY:
-						that.write = q;
-						r = that.inflate_flush(z, r);
-						q = that.write;
-						m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
-						if (that.read != that.write) {
-							that.bitb = b;
-							that.bitk = k;
-							z.avail_in = n;
-							z.total_in += p - z.next_in_index;
-							z.next_in_index = p;
-							that.write = q;
-							return that.inflate_flush(z, r);
-						}
-						mode = DONELOCKS;
-					/* falls through */
-					case DONELOCKS:
-						r = Z_STREAM_END;
+						r = t;
 
 						that.bitb = b;
 						that.bitk = k;
@@ -9009,9 +8942,44 @@ const ZipInflate = (() => {
 						z.next_in_index = p;
 						that.write = q;
 						return that.inflate_flush(z, r);
-					case BADBLOCKS:
-						r = Z_DATA_ERROR;
+					}
+					codes.init(bl_[0], bd_[0], hufts, tl_[0], hufts, td_[0]);
+					// }
+					mode = CODES;
+				/* falls through */
+				case CODES:
+					that.bitb = b;
+					that.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					that.write = q;
 
+					if ((r = codes.proc(that, z, r)) != inflate_Z_STREAM_END) {
+						return that.inflate_flush(z, r);
+					}
+					r = inflate_Z_OK;
+					codes.free(z);
+
+					p = z.next_in_index;
+					n = z.avail_in;
+					b = that.bitb;
+					k = that.bitk;
+					q = that.write;
+					m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+
+					if (last === 0) {
+						mode = TYPE;
+						break;
+					}
+					mode = DRY;
+				/* falls through */
+				case DRY:
+					that.write = q;
+					r = that.inflate_flush(z, r);
+					q = that.write;
+					m = /* (int) */(q < that.read ? that.read - q - 1 : that.end - q);
+					if (that.read != that.write) {
 						that.bitb = b;
 						that.bitk = k;
 						z.avail_in = n;
@@ -9019,449 +8987,469 @@ const ZipInflate = (() => {
 						z.next_in_index = p;
 						that.write = q;
 						return that.inflate_flush(z, r);
+					}
+					mode = DONELOCKS;
+				/* falls through */
+				case DONELOCKS:
+					r = inflate_Z_STREAM_END;
 
-					default:
-						r = Z_STREAM_ERROR;
+					that.bitb = b;
+					that.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					that.write = q;
+					return that.inflate_flush(z, r);
+				case BADBLOCKS:
+					r = inflate_Z_DATA_ERROR;
 
-						that.bitb = b;
-						that.bitk = k;
-						z.avail_in = n;
-						z.total_in += p - z.next_in_index;
-						z.next_in_index = p;
-						that.write = q;
-						return that.inflate_flush(z, r);
-				}
+					that.bitb = b;
+					that.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					that.write = q;
+					return that.inflate_flush(z, r);
+
+				default:
+					r = inflate_Z_STREAM_ERROR;
+
+					that.bitb = b;
+					that.bitk = k;
+					z.avail_in = n;
+					z.total_in += p - z.next_in_index;
+					z.next_in_index = p;
+					that.write = q;
+					return that.inflate_flush(z, r);
 			}
-		};
-
-		that.free = function (z) {
-			that.reset(z, null);
-			that.win = null;
-			hufts = null;
-			// ZFREE(z, s);
-		};
-
-		that.set_dictionary = function (d, start, n) {
-			that.win.set(d.subarray(start, start + n), 0);
-			that.read = that.write = n;
-		};
-
-		// Returns true if inflate is currently at the end of a block generated
-		// by Z_SYNC_FLUSH or Z_FULL_FLUSH.
-		that.sync_point = function () {
-			return mode == LENS ? 1 : 0;
-		};
-
-	}
-
-	// Inflate
-
-	// preset dictionary flag in zlib header
-	const PRESET_DICT = 0x20;
-
-	const Z_DEFLATED = 8;
-
-	const METHOD = 0; // waiting for method byte
-	const FLAG = 1; // waiting for flag byte
-	const DICT4 = 2; // four dictionary check bytes to go
-	const DICT3 = 3; // three dictionary check bytes to go
-	const DICT2 = 4; // two dictionary check bytes to go
-	const DICT1 = 5; // one dictionary check byte to go
-	const DICT0 = 6; // waiting for inflateSetDictionary
-	const BLOCKS = 7; // decompressing blocks
-	const DONE = 12; // finished check, done
-	const BAD = 13; // got an error--stay here
-
-	const mark = [0, 0, 0xff, 0xff];
-
-	function Inflate() {
-		const that = this;
-
-		that.mode = 0; // current inflate mode
-
-		// mode dependent information
-		that.method = 0; // if FLAGS, method byte
-
-		// if CHECK, check values to compare
-		that.was = [0]; // new Array(1); // computed check value
-		that.need = 0; // stream check value
-
-		// if BAD, inflateSync's marker bytes count
-		that.marker = 0;
-
-		// mode independent information
-		that.wbits = 0; // log2(win size) (8..15, defaults to 15)
-
-		// this.blocks; // current inflate_blocks state
-
-		function inflateReset(z) {
-			if (!z || !z.istate)
-				return Z_STREAM_ERROR;
-
-			z.total_in = z.total_out = 0;
-			z.msg = null;
-			z.istate.mode = BLOCKS;
-			z.istate.blocks.reset(z, null);
-			return Z_OK;
-		}
-
-		that.inflateEnd = function (z) {
-			if (that.blocks)
-				that.blocks.free(z);
-			that.blocks = null;
-			// ZFREE(z, z->state);
-			return Z_OK;
-		};
-
-		that.inflateInit = function (z, w) {
-			z.msg = null;
-			that.blocks = null;
-
-			// set win size
-			if (w < 8 || w > 15) {
-				that.inflateEnd(z);
-				return Z_STREAM_ERROR;
-			}
-			that.wbits = w;
-
-			z.istate.blocks = new InfBlocks(z, 1 << w);
-
-			// reset state
-			inflateReset(z);
-			return Z_OK;
-		};
-
-		that.inflate = function (z, f) {
-			let r;
-			let b;
-
-			if (!z || !z.istate || !z.next_in)
-				return Z_STREAM_ERROR;
-			const istate = z.istate;
-			f = f == Z_FINISH ? Z_BUF_ERROR : Z_OK;
-			r = Z_BUF_ERROR;
-			// eslint-disable-next-line no-constant-condition
-			while (true) {
-				switch (istate.mode) {
-					case METHOD:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						if (((istate.method = z.read_byte(z.next_in_index++)) & 0xf) != Z_DEFLATED) {
-							istate.mode = BAD;
-							z.msg = "unknown compression method";
-							istate.marker = 5; // can't try inflateSync
-							break;
-						}
-						if ((istate.method >> 4) + 8 > istate.wbits) {
-							istate.mode = BAD;
-							z.msg = "invalid win size";
-							istate.marker = 5; // can't try inflateSync
-							break;
-						}
-						istate.mode = FLAG;
-					/* falls through */
-					case FLAG:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						b = (z.read_byte(z.next_in_index++)) & 0xff;
-
-						if ((((istate.method << 8) + b) % 31) !== 0) {
-							istate.mode = BAD;
-							z.msg = "incorrect header check";
-							istate.marker = 5; // can't try inflateSync
-							break;
-						}
-
-						if ((b & PRESET_DICT) === 0) {
-							istate.mode = BLOCKS;
-							break;
-						}
-						istate.mode = DICT4;
-					/* falls through */
-					case DICT4:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						istate.need = ((z.read_byte(z.next_in_index++) & 0xff) << 24) & 0xff000000;
-						istate.mode = DICT3;
-					/* falls through */
-					case DICT3:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						istate.need += ((z.read_byte(z.next_in_index++) & 0xff) << 16) & 0xff0000;
-						istate.mode = DICT2;
-					/* falls through */
-					case DICT2:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						istate.need += ((z.read_byte(z.next_in_index++) & 0xff) << 8) & 0xff00;
-						istate.mode = DICT1;
-					/* falls through */
-					case DICT1:
-
-						if (z.avail_in === 0)
-							return r;
-						r = f;
-
-						z.avail_in--;
-						z.total_in++;
-						istate.need += (z.read_byte(z.next_in_index++) & 0xff);
-						istate.mode = DICT0;
-						return Z_NEED_DICT;
-					case DICT0:
-						istate.mode = BAD;
-						z.msg = "need dictionary";
-						istate.marker = 0; // can try inflateSync
-						return Z_STREAM_ERROR;
-					case BLOCKS:
-
-						r = istate.blocks.proc(z, r);
-						if (r == Z_DATA_ERROR) {
-							istate.mode = BAD;
-							istate.marker = 0; // can try inflateSync
-							break;
-						}
-						if (r == Z_OK) {
-							r = f;
-						}
-						if (r != Z_STREAM_END) {
-							return r;
-						}
-						r = f;
-						istate.blocks.reset(z, istate.was);
-						istate.mode = DONE;
-					/* falls through */
-					case DONE:
-						z.avail_in = 0;
-						return Z_STREAM_END;
-					case BAD:
-						return Z_DATA_ERROR;
-					default:
-						return Z_STREAM_ERROR;
-				}
-			}
-		};
-
-		that.inflateSetDictionary = function (z, dictionary, dictLength) {
-			let index = 0, length = dictLength;
-			if (!z || !z.istate || z.istate.mode != DICT0)
-				return Z_STREAM_ERROR;
-			const istate = z.istate;
-			if (length >= (1 << istate.wbits)) {
-				length = (1 << istate.wbits) - 1;
-				index = dictLength - length;
-			}
-			istate.blocks.set_dictionary(dictionary, index, length);
-			istate.mode = BLOCKS;
-			return Z_OK;
-		};
-
-		that.inflateSync = function (z) {
-			let n; // number of bytes to look at
-			let p; // pointer to bytes
-			let m; // number of marker bytes found in a row
-			let r, w; // temporaries to save total_in and total_out
-
-			// set up
-			if (!z || !z.istate)
-				return Z_STREAM_ERROR;
-			const istate = z.istate;
-			if (istate.mode != BAD) {
-				istate.mode = BAD;
-				istate.marker = 0;
-			}
-			if ((n = z.avail_in) === 0)
-				return Z_BUF_ERROR;
-			p = z.next_in_index;
-			m = istate.marker;
-
-			// search
-			while (n !== 0 && m < 4) {
-				if (z.read_byte(p) == mark[m]) {
-					m++;
-				} else if (z.read_byte(p) !== 0) {
-					m = 0;
-				} else {
-					m = 4 - m;
-				}
-				p++;
-				n--;
-			}
-
-			// restore
-			z.total_in += p - z.next_in_index;
-			z.next_in_index = p;
-			z.avail_in = n;
-			istate.marker = m;
-
-			// return no joy or set up to restart on a new block
-			if (m != 4) {
-				return Z_DATA_ERROR;
-			}
-			r = z.total_in;
-			w = z.total_out;
-			inflateReset(z);
-			z.total_in = r;
-			z.total_out = w;
-			istate.mode = BLOCKS;
-			return Z_OK;
-		};
-
-		// Returns true if inflate is currently at the end of a block generated
-		// by Z_SYNC_FLUSH or Z_FULL_FLUSH. This function is used by one PPP
-		// implementation to provide an additional safety check. PPP uses
-		// Z_SYNC_FLUSH
-		// but removes the length bytes of the resulting empty stored block. When
-		// decompressing, PPP checks that at the end of input packet, inflate is
-		// waiting for these length bytes.
-		that.inflateSyncPoint = function (z) {
-			if (!z || !z.istate || !z.istate.blocks)
-				return Z_STREAM_ERROR;
-			return z.istate.blocks.sync_point();
-		};
-	}
-
-	// ZStream
-
-	function ZStream() {
-	}
-
-	ZStream.prototype = {
-		inflateInit: function (bits) {
-			const that = this;
-			that.istate = new Inflate();
-			if (!bits)
-				bits = MAX_BITS;
-			return that.istate.inflateInit(that, bits);
-		},
-
-		inflate: function (f) {
-			const that = this;
-			if (!that.istate)
-				return Z_STREAM_ERROR;
-			return that.istate.inflate(that, f);
-		},
-
-		inflateEnd: function () {
-			const that = this;
-			if (!that.istate)
-				return Z_STREAM_ERROR;
-			const ret = that.istate.inflateEnd(that);
-			that.istate = null;
-			return ret;
-		},
-
-		inflateSync: function () {
-			const that = this;
-			if (!that.istate)
-				return Z_STREAM_ERROR;
-			return that.istate.inflateSync(that);
-		},
-		inflateSetDictionary: function (dictionary, dictLength) {
-			const that = this;
-			if (!that.istate)
-				return Z_STREAM_ERROR;
-			return that.istate.inflateSetDictionary(that, dictionary, dictLength);
-		},
-		read_byte: function (start) {
-			const that = this;
-			return that.next_in[start];
-		},
-		read_buf: function (start, size) {
-			const that = this;
-			return that.next_in.subarray(start, start + size);
 		}
 	};
 
-	// Inflater
+	that.free = function (z) {
+		that.reset(z, null);
+		that.win = null;
+		hufts = null;
+		// ZFREE(z, s);
+	};
 
-	function ZipInflate(options) {
-		const that = this;
-		const z = new ZStream();
-		const bufsize = options && options.chunkSize ? Math.floor(options.chunkSize * 2) : 128 * 1024;
-		const flush = Z_NO_FLUSH;
-		const buf = new Uint8Array(bufsize);
-		let nomoreinput = false;
+	that.set_dictionary = function (d, start, n) {
+		that.win.set(d.subarray(start, start + n), 0);
+		that.read = that.write = n;
+	};
 
-		z.inflateInit();
-		z.next_out = buf;
+	// Returns true if inflate is currently at the end of a block generated
+	// by Z_SYNC_FLUSH or Z_FULL_FLUSH.
+	that.sync_point = function () {
+		return mode == LENS ? 1 : 0;
+	};
 
-		that.append = function (data, onprogress) {
-			const buffers = [];
-			let err, array, lastIndex = 0, bufferIndex = 0, bufferSize = 0;
-			if (data.length === 0)
-				return;
-			z.next_in_index = 0;
-			z.next_in = data;
-			z.avail_in = data.length;
-			do {
-				z.next_out_index = 0;
-				z.avail_out = bufsize;
-				if ((z.avail_in === 0) && (!nomoreinput)) { // if buffer is empty and more input is available, refill it
-					z.next_in_index = 0;
-					nomoreinput = true;
-				}
-				err = z.inflate(flush);
-				if (nomoreinput && (err === Z_BUF_ERROR)) {
-					if (z.avail_in !== 0)
-						throw new Error("inflating: bad input");
-				} else if (err !== Z_OK && err !== Z_STREAM_END)
-					throw new Error("inflating: " + z.msg);
-				if ((nomoreinput || err === Z_STREAM_END) && (z.avail_in === data.length))
-					throw new Error("inflating: bad input");
-				if (z.next_out_index)
-					if (z.next_out_index === bufsize)
-						buffers.push(new Uint8Array(buf));
-					else
-						buffers.push(buf.slice(0, z.next_out_index));
-				bufferSize += z.next_out_index;
-				if (onprogress && z.next_in_index > 0 && z.next_in_index != lastIndex) {
-					onprogress(z.next_in_index);
-					lastIndex = z.next_in_index;
-				}
-			} while (z.avail_in > 0 || z.avail_out === 0);
-			if (buffers.length > 1) {
-				array = new Uint8Array(bufferSize);
-				buffers.forEach(function (chunk) {
-					array.set(chunk, bufferIndex);
-					bufferIndex += chunk.length;
-				});
-			} else {
-				array = buffers[0] || new Uint8Array(0);
-			}
-			return array;
-		};
-		that.flush = function () {
-			z.inflateEnd();
-		};
+}
+
+// Inflate
+
+// preset dictionary flag in zlib header
+const inflate_PRESET_DICT = 0x20;
+
+const inflate_Z_DEFLATED = 8;
+
+const METHOD = 0; // waiting for method byte
+const FLAG = 1; // waiting for flag byte
+const DICT4 = 2; // four dictionary check bytes to go
+const DICT3 = 3; // three dictionary check bytes to go
+const DICT2 = 4; // two dictionary check bytes to go
+const DICT1 = 5; // one dictionary check byte to go
+const DICT0 = 6; // waiting for inflateSetDictionary
+const BLOCKS = 7; // decompressing blocks
+const DONE = 12; // finished check, done
+const BAD = 13; // got an error--stay here
+
+const mark = [0, 0, 0xff, 0xff];
+
+function Inflate() {
+	const that = this;
+
+	that.mode = 0; // current inflate mode
+
+	// mode dependent information
+	that.method = 0; // if FLAGS, method byte
+
+	// if CHECK, check values to compare
+	that.was = [0]; // new Array(1); // computed check value
+	that.need = 0; // stream check value
+
+	// if BAD, inflateSync's marker bytes count
+	that.marker = 0;
+
+	// mode independent information
+	that.wbits = 0; // log2(win size) (8..15, defaults to 15)
+
+	// this.blocks; // current inflate_blocks state
+
+	function inflateReset(z) {
+		if (!z || !z.istate)
+			return inflate_Z_STREAM_ERROR;
+
+		z.total_in = z.total_out = 0;
+		z.msg = null;
+		z.istate.mode = BLOCKS;
+		z.istate.blocks.reset(z, null);
+		return inflate_Z_OK;
 	}
-	return ZipInflate;
 
-})();
+	that.inflateEnd = function (z) {
+		if (that.blocks)
+			that.blocks.free(z);
+		that.blocks = null;
+		// ZFREE(z, z->state);
+		return inflate_Z_OK;
+	};
+
+	that.inflateInit = function (z, w) {
+		z.msg = null;
+		that.blocks = null;
+
+		// set win size
+		if (w < 8 || w > 15) {
+			that.inflateEnd(z);
+			return inflate_Z_STREAM_ERROR;
+		}
+		that.wbits = w;
+
+		z.istate.blocks = new InfBlocks(z, 1 << w);
+
+		// reset state
+		inflateReset(z);
+		return inflate_Z_OK;
+	};
+
+	that.inflate = function (z, f) {
+		let r;
+		let b;
+
+		if (!z || !z.istate || !z.next_in)
+			return inflate_Z_STREAM_ERROR;
+		const istate = z.istate;
+		f = f == inflate_Z_FINISH ? inflate_Z_BUF_ERROR : inflate_Z_OK;
+		r = inflate_Z_BUF_ERROR;
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			switch (istate.mode) {
+				case METHOD:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					if (((istate.method = z.read_byte(z.next_in_index++)) & 0xf) != inflate_Z_DEFLATED) {
+						istate.mode = BAD;
+						z.msg = "unknown compression method";
+						istate.marker = 5; // can't try inflateSync
+						break;
+					}
+					if ((istate.method >> 4) + 8 > istate.wbits) {
+						istate.mode = BAD;
+						z.msg = "invalid win size";
+						istate.marker = 5; // can't try inflateSync
+						break;
+					}
+					istate.mode = FLAG;
+				/* falls through */
+				case FLAG:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					b = (z.read_byte(z.next_in_index++)) & 0xff;
+
+					if ((((istate.method << 8) + b) % 31) !== 0) {
+						istate.mode = BAD;
+						z.msg = "incorrect header check";
+						istate.marker = 5; // can't try inflateSync
+						break;
+					}
+
+					if ((b & inflate_PRESET_DICT) === 0) {
+						istate.mode = BLOCKS;
+						break;
+					}
+					istate.mode = DICT4;
+				/* falls through */
+				case DICT4:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					istate.need = ((z.read_byte(z.next_in_index++) & 0xff) << 24) & 0xff000000;
+					istate.mode = DICT3;
+				/* falls through */
+				case DICT3:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					istate.need += ((z.read_byte(z.next_in_index++) & 0xff) << 16) & 0xff0000;
+					istate.mode = DICT2;
+				/* falls through */
+				case DICT2:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					istate.need += ((z.read_byte(z.next_in_index++) & 0xff) << 8) & 0xff00;
+					istate.mode = DICT1;
+				/* falls through */
+				case DICT1:
+
+					if (z.avail_in === 0)
+						return r;
+					r = f;
+
+					z.avail_in--;
+					z.total_in++;
+					istate.need += (z.read_byte(z.next_in_index++) & 0xff);
+					istate.mode = DICT0;
+					return inflate_Z_NEED_DICT;
+				case DICT0:
+					istate.mode = BAD;
+					z.msg = "need dictionary";
+					istate.marker = 0; // can try inflateSync
+					return inflate_Z_STREAM_ERROR;
+				case BLOCKS:
+
+					r = istate.blocks.proc(z, r);
+					if (r == inflate_Z_DATA_ERROR) {
+						istate.mode = BAD;
+						istate.marker = 0; // can try inflateSync
+						break;
+					}
+					if (r == inflate_Z_OK) {
+						r = f;
+					}
+					if (r != inflate_Z_STREAM_END) {
+						return r;
+					}
+					r = f;
+					istate.blocks.reset(z, istate.was);
+					istate.mode = DONE;
+				/* falls through */
+				case DONE:
+					z.avail_in = 0;
+					return inflate_Z_STREAM_END;
+				case BAD:
+					return inflate_Z_DATA_ERROR;
+				default:
+					return inflate_Z_STREAM_ERROR;
+			}
+		}
+	};
+
+	that.inflateSetDictionary = function (z, dictionary, dictLength) {
+		let index = 0, length = dictLength;
+		if (!z || !z.istate || z.istate.mode != DICT0)
+			return inflate_Z_STREAM_ERROR;
+		const istate = z.istate;
+		if (length >= (1 << istate.wbits)) {
+			length = (1 << istate.wbits) - 1;
+			index = dictLength - length;
+		}
+		istate.blocks.set_dictionary(dictionary, index, length);
+		istate.mode = BLOCKS;
+		return inflate_Z_OK;
+	};
+
+	that.inflateSync = function (z) {
+		let n; // number of bytes to look at
+		let p; // pointer to bytes
+		let m; // number of marker bytes found in a row
+		let r, w; // temporaries to save total_in and total_out
+
+		// set up
+		if (!z || !z.istate)
+			return inflate_Z_STREAM_ERROR;
+		const istate = z.istate;
+		if (istate.mode != BAD) {
+			istate.mode = BAD;
+			istate.marker = 0;
+		}
+		if ((n = z.avail_in) === 0)
+			return inflate_Z_BUF_ERROR;
+		p = z.next_in_index;
+		m = istate.marker;
+
+		// search
+		while (n !== 0 && m < 4) {
+			if (z.read_byte(p) == mark[m]) {
+				m++;
+			} else if (z.read_byte(p) !== 0) {
+				m = 0;
+			} else {
+				m = 4 - m;
+			}
+			p++;
+			n--;
+		}
+
+		// restore
+		z.total_in += p - z.next_in_index;
+		z.next_in_index = p;
+		z.avail_in = n;
+		istate.marker = m;
+
+		// return no joy or set up to restart on a new block
+		if (m != 4) {
+			return inflate_Z_DATA_ERROR;
+		}
+		r = z.total_in;
+		w = z.total_out;
+		inflateReset(z);
+		z.total_in = r;
+		z.total_out = w;
+		istate.mode = BLOCKS;
+		return inflate_Z_OK;
+	};
+
+	// Returns true if inflate is currently at the end of a block generated
+	// by Z_SYNC_FLUSH or Z_FULL_FLUSH. This function is used by one PPP
+	// implementation to provide an additional safety check. PPP uses
+	// Z_SYNC_FLUSH
+	// but removes the length bytes of the resulting empty stored block. When
+	// decompressing, PPP checks that at the end of input packet, inflate is
+	// waiting for these length bytes.
+	that.inflateSyncPoint = function (z) {
+		if (!z || !z.istate || !z.istate.blocks)
+			return inflate_Z_STREAM_ERROR;
+		return z.istate.blocks.sync_point();
+	};
+}
+
+// ZStream
+
+function inflate_ZStream() {
+}
+
+inflate_ZStream.prototype = {
+	inflateInit: function (bits) {
+		const that = this;
+		that.istate = new Inflate();
+		if (!bits)
+			bits = inflate_MAX_BITS;
+		return that.istate.inflateInit(that, bits);
+	},
+
+	inflate: function (f) {
+		const that = this;
+		if (!that.istate)
+			return inflate_Z_STREAM_ERROR;
+		return that.istate.inflate(that, f);
+	},
+
+	inflateEnd: function () {
+		const that = this;
+		if (!that.istate)
+			return inflate_Z_STREAM_ERROR;
+		const ret = that.istate.inflateEnd(that);
+		that.istate = null;
+		return ret;
+	},
+
+	inflateSync: function () {
+		const that = this;
+		if (!that.istate)
+			return inflate_Z_STREAM_ERROR;
+		return that.istate.inflateSync(that);
+	},
+	inflateSetDictionary: function (dictionary, dictLength) {
+		const that = this;
+		if (!that.istate)
+			return inflate_Z_STREAM_ERROR;
+		return that.istate.inflateSetDictionary(that, dictionary, dictLength);
+	},
+	read_byte: function (start) {
+		const that = this;
+		return that.next_in[start];
+	},
+	read_buf: function (start, size) {
+		const that = this;
+		return that.next_in.subarray(start, start + size);
+	}
+};
+
+// Inflater
+
+function ZipInflate(options) {
+	const that = this;
+	const z = new inflate_ZStream();
+	const bufsize = options && options.chunkSize ? Math.floor(options.chunkSize * 2) : 128 * 1024;
+	const flush = inflate_Z_NO_FLUSH;
+	const buf = new Uint8Array(bufsize);
+	let nomoreinput = false;
+
+	z.inflateInit();
+	z.next_out = buf;
+
+	that.append = function (data, onprogress) {
+		const buffers = [];
+		let err, array, lastIndex = 0, bufferIndex = 0, bufferSize = 0;
+		if (data.length === 0)
+			return;
+		z.next_in_index = 0;
+		z.next_in = data;
+		z.avail_in = data.length;
+		do {
+			z.next_out_index = 0;
+			z.avail_out = bufsize;
+			if ((z.avail_in === 0) && (!nomoreinput)) { // if buffer is empty and more input is available, refill it
+				z.next_in_index = 0;
+				nomoreinput = true;
+			}
+			err = z.inflate(flush);
+			if (nomoreinput && (err === inflate_Z_BUF_ERROR)) {
+				if (z.avail_in !== 0)
+					throw new Error("inflating: bad input");
+			} else if (err !== inflate_Z_OK && err !== inflate_Z_STREAM_END)
+				throw new Error("inflating: " + z.msg);
+			if ((nomoreinput || err === inflate_Z_STREAM_END) && (z.avail_in === data.length))
+				throw new Error("inflating: bad input");
+			if (z.next_out_index)
+				if (z.next_out_index === bufsize)
+					buffers.push(new Uint8Array(buf));
+				else
+					buffers.push(buf.slice(0, z.next_out_index));
+			bufferSize += z.next_out_index;
+			if (onprogress && z.next_in_index > 0 && z.next_in_index != lastIndex) {
+				onprogress(z.next_in_index);
+				lastIndex = z.next_in_index;
+			}
+		} while (z.avail_in > 0 || z.avail_out === 0);
+		if (buffers.length > 1) {
+			array = new Uint8Array(bufferSize);
+			buffers.forEach(function (chunk) {
+				array.set(chunk, bufferIndex);
+				bufferIndex += chunk.length;
+			});
+		} else {
+			array = buffers[0] || new Uint8Array(0);
+		}
+		return array;
+	};
+	that.flush = function () {
+		z.inflateEnd();
+	};
+}
 
 /* harmony default export */ const inflate = (ZipInflate);
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/configuration.js
@@ -9495,7 +9483,6 @@ const ZipInflate = (() => {
 
 /* global navigator */
 
-const MINIMUM_CHUNK_SIZE = 64;
 const DEFAULT_CONFIGURATION = {
 	chunkSize: 512 * 1024,
 	maxWorkers: (typeof navigator != "undefined" && navigator.hardwareConcurrency) || 2,
@@ -9510,10 +9497,6 @@ const config = Object.assign({}, DEFAULT_CONFIGURATION);
 
 function getConfiguration() {
 	return config;
-}
-
-function getChunkSize(config) {
-	return Math.max(config.chunkSize, MINIMUM_CHUNK_SIZE);
 }
 
 function configure(configuration) {
@@ -10665,61 +10648,6 @@ class Crc32 {
 }
 
 /* harmony default export */ const codecs_crc32 = (Crc32);
-;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/crc32-stream.js
-/*
- Copyright (c) 2022 Gildas Lormeau. All rights reserved.
-
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions are met:
-
- 1. Redistributions of source code must retain the above copyright notice,
- this list of conditions and the following disclaimer.
-
- 2. Redistributions in binary form must reproduce the above copyright 
- notice, this list of conditions and the following disclaimer in 
- the documentation and/or other materials provided with the distribution.
-
- 3. The names of the authors may not be used to endorse or promote products
- derived from this software without specific prior written permission.
-
- THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
- INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JCRAFT,
- INC. OR ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
- INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-/* global TransformStream */
-
-
-
-class Crc32Stream extends TransformStream {
-	constructor() {
-		super({
-			start() {
-				this.crc32 = new codecs_crc32();
-			},
-			transform(chunk) {
-				if (chunk && chunk.length) {
-					this.crc32.append(chunk);
-				}
-			},
-			flush(controller) {
-				const value = new Uint8Array(4);
-				const dataView = new DataView(value.buffer);
-				dataView.setUint32(0, this.crc32.get());
-				controller.enqueue(value);
-			}
-		});
-	}
-}
-
-/* harmony default export */ const crc32_stream = (Crc32Stream);
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/util/encode-text.js
 /*
  Copyright (c) 2022 Gildas Lormeau. All rights reserved.
@@ -11589,7 +11517,7 @@ misc.hmacSha1 = class {
 };
 
 
-;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/aes-crypto-stream.js
+;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/aes-crypto.js
 /*
  Copyright (c) 2022 Gildas Lormeau. All rights reserved.
 
@@ -11618,7 +11546,7 @@ misc.hmacSha1 = class {
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* global crypto, TransformStream */
+/* global crypto */
 // deno-lint-ignore-file no-this-alias
 
 
@@ -11637,126 +11565,102 @@ const SALT_LENGTH = [8, 12, 16];
 const KEY_LENGTH = [16, 24, 32];
 const SIGNATURE_LENGTH = 10;
 const COUNTER_DEFAULT_VALUE = [0, 0, 0, 0];
-const UNDEFINED_TYPE = "undefined";
-const FUNCTION_TYPE = "function";
-const CRYPTO_API_SUPPORTED = typeof crypto != UNDEFINED_TYPE;
-const SUBTLE_API_SUPPORTED = CRYPTO_API_SUPPORTED && typeof crypto.subtle != UNDEFINED_TYPE;
-const GET_RANDOM_VALUES_SUPPORTED = CRYPTO_API_SUPPORTED && typeof crypto.getRandomValues == FUNCTION_TYPE;
-const IMPORT_KEY_SUPPORTED = CRYPTO_API_SUPPORTED && SUBTLE_API_SUPPORTED && typeof crypto.subtle.importKey == FUNCTION_TYPE;
-const DERIVE_BITS_SUPPORTED = CRYPTO_API_SUPPORTED && SUBTLE_API_SUPPORTED && typeof crypto.subtle.deriveBits == FUNCTION_TYPE;
+const CRYPTO_API_SUPPORTED = typeof crypto != "undefined";
+const SUBTLE_API_SUPPORTED = CRYPTO_API_SUPPORTED && typeof crypto.subtle != "undefined";
 const codecBytes = codec.bytes;
 const Aes = cipher.aes;
 const CtrGladman = mode.ctrGladman;
 const HmacSha1 = misc.hmacSha1;
-
-class AESDecryptionStream extends TransformStream {
+class AESDecrypt {
 
 	constructor(password, signed, strength) {
-		let stream;
-		super({
-			start() {
-				Object.assign(this, {
-					ready: new Promise(resolve => this.resolveReady = resolve),
-					password,
-					signed,
-					strength: strength - 1,
-					pending: new Uint8Array(0)
-				});
-			},
-			async transform(chunk, controller) {
-				if (chunk && chunk.length) {
-					const aesCrypto = this;
-					if (aesCrypto.password) {
-						const password = aesCrypto.password;
-						aesCrypto.password = null;
-						const preamble = subarray(chunk, 0, SALT_LENGTH[aesCrypto.strength] + 2);
-						await createDecryptionKeys(aesCrypto, preamble, password);
-						aesCrypto.ctr = new CtrGladman(new Aes(aesCrypto.keys.key), Array.from(COUNTER_DEFAULT_VALUE));
-						aesCrypto.hmac = new HmacSha1(aesCrypto.keys.authentication);
-						chunk = subarray(chunk, SALT_LENGTH[aesCrypto.strength] + 2);
-						aesCrypto.resolveReady();
-					} else {
-						await aesCrypto.ready;
-					}
-					const output = new Uint8Array(chunk.length - SIGNATURE_LENGTH - ((chunk.length - SIGNATURE_LENGTH) % BLOCK_LENGTH));
-					controller.enqueue(append(aesCrypto, chunk, output, 0, SIGNATURE_LENGTH, true));
-				}
-			},
-			async flush(controller) {
-				const aesCrypto = this;
-				await aesCrypto.ready;
-				const pending = aesCrypto.pending;
-				const chunkToDecrypt = subarray(pending, 0, pending.length - SIGNATURE_LENGTH);
-				const originalSignature = subarray(pending, pending.length - SIGNATURE_LENGTH);
-				let decryptedChunkArray = new Uint8Array(0);
-				if (chunkToDecrypt.length) {
-					const encryptedChunk = toBits(codecBytes, chunkToDecrypt);
-					aesCrypto.hmac.update(encryptedChunk);
-					const decryptedChunk = aesCrypto.ctr.update(encryptedChunk);
-					decryptedChunkArray = fromBits(codecBytes, decryptedChunk);
-				}
-				stream.valid = true;
-				if (aesCrypto.signed) {
-					const signature = subarray(fromBits(codecBytes, aesCrypto.hmac.digest()), 0, SIGNATURE_LENGTH);
-					for (let indexSignature = 0; indexSignature < SIGNATURE_LENGTH; indexSignature++) {
-						if (signature[indexSignature] != originalSignature[indexSignature]) {
-							stream.valid = false;
-						}
-					}
-				}
-				controller.enqueue(decryptedChunkArray);
-			}
+		Object.assign(this, {
+			password,
+			signed,
+			strength: strength - 1,
+			pendingInput: new Uint8Array(0)
 		});
-		stream = this;
+	}
+
+	async append(input) {
+		const aesCrypto = this;
+		if (aesCrypto.password) {
+			const preamble = subarray(input, 0, SALT_LENGTH[aesCrypto.strength] + 2);
+			await createDecryptionKeys(aesCrypto, preamble, aesCrypto.password);
+			aesCrypto.password = null;
+			aesCrypto.aesCtrGladman = new CtrGladman(new Aes(aesCrypto.keys.key), Array.from(COUNTER_DEFAULT_VALUE));
+			aesCrypto.hmac = new HmacSha1(aesCrypto.keys.authentication);
+			input = subarray(input, SALT_LENGTH[aesCrypto.strength] + 2);
+		}
+		const output = new Uint8Array(input.length - SIGNATURE_LENGTH - ((input.length - SIGNATURE_LENGTH) % BLOCK_LENGTH));
+		return append(aesCrypto, input, output, 0, SIGNATURE_LENGTH, true);
+	}
+
+	flush() {
+		const aesCrypto = this;
+		const pendingInput = aesCrypto.pendingInput;
+		const chunkToDecrypt = subarray(pendingInput, 0, pendingInput.length - SIGNATURE_LENGTH);
+		const originalSignature = subarray(pendingInput, pendingInput.length - SIGNATURE_LENGTH);
+		let decryptedChunkArray = new Uint8Array(0);
+		if (chunkToDecrypt.length) {
+			const encryptedChunk = codecBytes.toBits(chunkToDecrypt);
+			aesCrypto.hmac.update(encryptedChunk);
+			const decryptedChunk = aesCrypto.aesCtrGladman.update(encryptedChunk);
+			decryptedChunkArray = codecBytes.fromBits(decryptedChunk);
+		}
+		let valid = true;
+		if (aesCrypto.signed) {
+			const signature = subarray(codecBytes.fromBits(aesCrypto.hmac.digest()), 0, SIGNATURE_LENGTH);
+			for (let indexSignature = 0; indexSignature < SIGNATURE_LENGTH; indexSignature++) {
+				if (signature[indexSignature] != originalSignature[indexSignature]) {
+					valid = false;
+				}
+			}
+		}
+		return {
+			valid,
+			data: decryptedChunkArray
+		};
 	}
 }
 
-class AESEncryptionStream extends TransformStream {
+class AESEncrypt {
 
 	constructor(password, strength) {
-		let stream;
-		super({
-			start() {
-				Object.assign(this, {
-					ready: new Promise(resolve => this.resolveReady = resolve),
-					password,
-					strength: strength - 1,
-					pending: new Uint8Array(0)
-				});
-			},
-			async transform(chunk, controller) {
-				if (chunk && chunk.length) {
-					const aesCrypto = this;
-					let preamble = new Uint8Array(0);
-					if (aesCrypto.password) {
-						const password = aesCrypto.password;
-						aesCrypto.password = null;
-						preamble = await createEncryptionKeys(aesCrypto, password);
-						aesCrypto.ctr = new CtrGladman(new Aes(aesCrypto.keys.key), Array.from(COUNTER_DEFAULT_VALUE));
-						aesCrypto.hmac = new HmacSha1(aesCrypto.keys.authentication);
-						aesCrypto.resolveReady();
-					} else {
-						await aesCrypto.ready;
-					}
-					const output = new Uint8Array(preamble.length + chunk.length - (chunk.length % BLOCK_LENGTH));
-					output.set(preamble, 0);
-					controller.enqueue(append(aesCrypto, chunk, output, preamble.length, 0));
-				}
-			},
-			async flush(controller) {
-				const aesCrypto = this;
-				await aesCrypto.ready;
-				let encryptedChunkArray = new Uint8Array(0);
-				if (aesCrypto.pending.length) {
-					const encryptedChunk = aesCrypto.ctr.update(toBits(codecBytes, aesCrypto.pending));
-					aesCrypto.hmac.update(encryptedChunk);
-					encryptedChunkArray = fromBits(codecBytes, encryptedChunk);
-				}
-				stream.signature = fromBits(codecBytes, aesCrypto.hmac.digest()).slice(0, SIGNATURE_LENGTH);
-				controller.enqueue(concat(encryptedChunkArray, stream.signature));
-			}
+		Object.assign(this, {
+			password,
+			strength: strength - 1,
+			pendingInput: new Uint8Array(0)
 		});
-		stream = this;
+	}
+
+	async append(input) {
+		const aesCrypto = this;
+		let preamble = new Uint8Array(0);
+		if (aesCrypto.password) {
+			preamble = await createEncryptionKeys(aesCrypto, aesCrypto.password);
+			aesCrypto.password = null;
+			aesCrypto.aesCtrGladman = new CtrGladman(new Aes(aesCrypto.keys.key), Array.from(COUNTER_DEFAULT_VALUE));
+			aesCrypto.hmac = new HmacSha1(aesCrypto.keys.authentication);
+		}
+		const output = new Uint8Array(preamble.length + input.length - (input.length % BLOCK_LENGTH));
+		output.set(preamble, 0);
+		return append(aesCrypto, input, output, preamble.length, 0);
+	}
+
+	flush() {
+		const aesCrypto = this;
+		let encryptedChunkArray = new Uint8Array(0);
+		if (aesCrypto.pendingInput.length) {
+			const encryptedChunk = aesCrypto.aesCtrGladman.update(codecBytes.toBits(aesCrypto.pendingInput));
+			aesCrypto.hmac.update(encryptedChunk);
+			encryptedChunkArray = codecBytes.fromBits(encryptedChunk);
+		}
+		const signature = subarray(codecBytes.fromBits(aesCrypto.hmac.digest()), 0, SIGNATURE_LENGTH);
+		return {
+			data: concat(encryptedChunkArray, signature),
+			signature
+		};
 	}
 }
 
@@ -11764,23 +11668,23 @@ class AESEncryptionStream extends TransformStream {
 
 function append(aesCrypto, input, output, paddingStart, paddingEnd, verifySignature) {
 	const inputLength = input.length - paddingEnd;
-	if (aesCrypto.pending.length) {
-		input = concat(aesCrypto.pending, input);
+	if (aesCrypto.pendingInput.length) {
+		input = concat(aesCrypto.pendingInput, input);
 		output = expand(output, inputLength - (inputLength % BLOCK_LENGTH));
 	}
 	let offset;
 	for (offset = 0; offset <= inputLength - BLOCK_LENGTH; offset += BLOCK_LENGTH) {
-		const inputChunk = toBits(codecBytes, subarray(input, offset, offset + BLOCK_LENGTH));
+		const inputChunk = codecBytes.toBits(subarray(input, offset, offset + BLOCK_LENGTH));
 		if (verifySignature) {
 			aesCrypto.hmac.update(inputChunk);
 		}
-		const outputChunk = aesCrypto.ctr.update(inputChunk);
+		const outputChunk = aesCrypto.aesCtrGladman.update(inputChunk);
 		if (!verifySignature) {
 			aesCrypto.hmac.update(outputChunk);
 		}
-		output.set(fromBits(codecBytes, outputChunk), offset + paddingStart);
+		output.set(codecBytes.fromBits(outputChunk), offset + paddingStart);
 	}
-	aesCrypto.pending = subarray(input, offset);
+	aesCrypto.pendingInput = subarray(input, offset);
 	return output;
 }
 
@@ -11805,14 +11709,14 @@ async function createKeys(target, password, salt) {
 	const derivedBits = await deriveBits(Object.assign({ salt }, DERIVED_BITS_ALGORITHM), basekey, 8 * ((KEY_LENGTH[target.strength] * 2) + 2));
 	const compositeKey = new Uint8Array(derivedBits);
 	target.keys = {
-		key: toBits(codecBytes, subarray(compositeKey, 0, KEY_LENGTH[target.strength])),
-		authentication: toBits(codecBytes, subarray(compositeKey, KEY_LENGTH[target.strength], KEY_LENGTH[target.strength] * 2)),
+		key: codecBytes.toBits(subarray(compositeKey, 0, KEY_LENGTH[target.strength])),
+		authentication: codecBytes.toBits(subarray(compositeKey, KEY_LENGTH[target.strength], KEY_LENGTH[target.strength] * 2)),
 		passwordVerification: subarray(compositeKey, KEY_LENGTH[target.strength] * 2)
 	};
 }
 
 function getRandomValues(array) {
-	if (GET_RANDOM_VALUES_SUPPORTED) {
+	if (CRYPTO_API_SUPPORTED && typeof crypto.getRandomValues == "function") {
 		return crypto.getRandomValues(array);
 	} else {
 		return random.getRandomValues(array);
@@ -11820,7 +11724,7 @@ function getRandomValues(array) {
 }
 
 function importKey(format, password, algorithm, extractable, keyUsages) {
-	if (IMPORT_KEY_SUPPORTED) {
+	if (CRYPTO_API_SUPPORTED && SUBTLE_API_SUPPORTED && typeof crypto.subtle.importKey == "function") {
 		return crypto.subtle.importKey(format, password, algorithm, extractable, keyUsages);
 	} else {
 		return misc.importKey(password);
@@ -11828,7 +11732,7 @@ function importKey(format, password, algorithm, extractable, keyUsages) {
 }
 
 async function deriveBits(algorithm, baseKey, length) {
-	if (DERIVE_BITS_SUPPORTED) {
+	if (CRYPTO_API_SUPPORTED && SUBTLE_API_SUPPORTED && typeof crypto.subtle.deriveBits == "function") {
 		return await crypto.subtle.deriveBits(algorithm, baseKey, length);
 	} else {
 		return misc.pbkdf2(baseKey, algorithm.salt, DERIVED_BITS_ALGORITHM.iterations, length);
@@ -11857,14 +11761,7 @@ function expand(inputArray, length) {
 function subarray(array, begin, end) {
 	return array.subarray(begin, end);
 }
-
-function fromBits(codecBytes, chunk) {
-	return codecBytes.fromBits(chunk);
-}
-function toBits(codecBytes, chunk) {
-	return codecBytes.toBits(chunk);
-}
-;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/zip-crypto-stream.js
+;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/zip-crypto.js
 /*
  Copyright (c) 2022 Gildas Lormeau. All rights reserved.
 
@@ -11893,7 +11790,7 @@ function toBits(codecBytes, chunk) {
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* global crypto, TransformStream */
+/* global crypto */
 // deno-lint-ignore-file no-this-alias
 
 
@@ -11901,74 +11798,72 @@ function toBits(codecBytes, chunk) {
 
 const HEADER_LENGTH = 12;
 
-class ZipCryptoDecryptionStream extends TransformStream {
+class ZipCryptoDecrypt {
 
 	constructor(password, passwordVerification) {
-		let stream;
-		super({
-			start() {
-				Object.assign(this, {
-					password,
-					passwordVerification
-				});
-				zip_crypto_stream_createKeys(this, password);
-			},
-			transform(chunk, controller) {
-				if (chunk && chunk.length) {
-					const zipCrypto = this;
-					if (zipCrypto.password) {
-						const decryptedHeader = decrypt(zipCrypto, chunk.subarray(0, HEADER_LENGTH));
-						zipCrypto.password = null;
-						if (decryptedHeader[HEADER_LENGTH - 1] != zipCrypto.passwordVerification) {
-							throw new Error(ERR_INVALID_PASSWORD);
-						}
-						chunk = chunk.subarray(HEADER_LENGTH);
-					}
-					controller.enqueue(decrypt(zipCrypto, chunk));
-				}
-			},
-			flush() {
-				stream.valid = true;
-			}
+		const zipCrypto = this;
+		Object.assign(zipCrypto, {
+			password,
+			passwordVerification
 		});
-		stream = this;
+		zip_crypto_createKeys(zipCrypto, password);
+	}
+
+	append(input) {
+		const zipCrypto = this;
+		if (zipCrypto.password) {
+			const decryptedHeader = decrypt(zipCrypto, input.subarray(0, HEADER_LENGTH));
+			zipCrypto.password = null;
+			if (decryptedHeader[HEADER_LENGTH - 1] != zipCrypto.passwordVerification) {
+				throw new Error(ERR_INVALID_PASSWORD);
+			}
+			input = input.subarray(HEADER_LENGTH);
+		}
+		return decrypt(zipCrypto, input);
+	}
+
+	flush() {
+		return {
+			valid: true,
+			data: new Uint8Array(0)
+		};
 	}
 }
 
-class ZipCryptoEncryptionStream extends TransformStream {
+class ZipCryptoEncrypt {
 
 	constructor(password, passwordVerification) {
-		super({
-			start() {
-				Object.assign(this, {
-					password,
-					passwordVerification
-				});
-				zip_crypto_stream_createKeys(this, password);
-			},
-			transform(chunk, controller) {
-				if (chunk && chunk.length) {
-					const zipCrypto = this;
-					let output;
-					let offset;
-					if (zipCrypto.password) {
-						zipCrypto.password = null;
-						const header = crypto.getRandomValues(new Uint8Array(HEADER_LENGTH));
-						header[HEADER_LENGTH - 1] = zipCrypto.passwordVerification;
-						output = new Uint8Array(chunk.length + header.length);
-						output.set(encrypt(zipCrypto, header), 0);
-						offset = HEADER_LENGTH;
-					} else {
-						output = new Uint8Array(chunk.length);
-						offset = 0;
-					}
-					output.set(encrypt(zipCrypto, chunk), offset);
-					controller.enqueue(output);
-				}
-			},
-			flush() {
-			}
+		const zipCrypto = this;
+		Object.assign(zipCrypto, {
+			password,
+			passwordVerification
 		});
+		zip_crypto_createKeys(zipCrypto, password);
+	}
+
+	append(input) {
+		const zipCrypto = this;
+		let output;
+		let offset;
+		if (zipCrypto.password) {
+			zipCrypto.password = null;
+			const header = crypto.getRandomValues(new Uint8Array(HEADER_LENGTH));
+			header[HEADER_LENGTH - 1] = zipCrypto.passwordVerification;
+			output = new Uint8Array(input.length + header.length);
+			output.set(encrypt(zipCrypto, header), 0);
+			offset = HEADER_LENGTH;
+		} else {
+			output = new Uint8Array(input.length);
+			offset = 0;
+		}
+		output.set(encrypt(zipCrypto, input), offset);
+		return output;
+	}
+
+	flush() {
+		return {
+			data: new Uint8Array(0)
+		};
 	}
 }
 
@@ -11992,7 +11887,7 @@ function encrypt(target, input) {
 	return output;
 }
 
-function zip_crypto_stream_createKeys(target, password) {
+function zip_crypto_createKeys(target, password) {
 	target.keys = [0x12345678, 0x23456789, 0x34567890];
 	target.crcKey0 = new codecs_crc32(target.keys[0]);
 	target.crcKey2 = new codecs_crc32(target.keys[2]);
@@ -12022,67 +11917,6 @@ function getInt8(number) {
 function getInt32(number) {
 	return number & 0xFFFFFFFF;
 }
-;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/codec-stream.js
-/*
- Copyright (c) 2022 Gildas Lormeau. All rights reserved.
-
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions are met:
-
- 1. Redistributions of source code must retain the above copyright notice,
- this list of conditions and the following disclaimer.
-
- 2. Redistributions in binary form must reproduce the above copyright 
- notice, this list of conditions and the following disclaimer in 
- the documentation and/or other materials provided with the distribution.
-
- 3. The names of the authors may not be used to endorse or promote products
- derived from this software without specific prior written permission.
-
- THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
- INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JCRAFT,
- INC. OR ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
- INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
- OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-/*
- * This program is based on JZlib 1.0.2 ymnk, JCraft,Inc.
- * JZlib is based on zlib-1.1.3, so all credit should go authors
- * Jean-loup Gailly(jloup@gzip.org) and Mark Adler(madler@alumni.caltech.edu)
- * and contributors of zlib.
- */
-
-/* global TransformStream */
-
-class CodecStream extends TransformStream {
-	constructor(Codec, options) {
-		super({
-			start() {
-				this.codec = new Codec(options);
-			},
-			transform(chunk, controller) {
-				chunk = this.codec.append(chunk);
-				if (chunk && chunk.length) {
-					controller.enqueue(chunk);
-				}
-			},
-			flush(controller) {
-				const chunk = this.codec.flush();
-				if (chunk && chunk.length) {
-					controller.enqueue(chunk);
-				}
-			}
-		});
-	}
-}
-
-/* harmony default export */ const codec_stream = (CodecStream);
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/codec.js
 /*
  Copyright (c) 2022 Gildas Lormeau. All rights reserved.
@@ -12112,9 +11946,7 @@ class CodecStream extends TransformStream {
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* global ReadableStream, DecompressionStream, CompressionStream */
 // deno-lint-ignore-file no-this-alias
-
 
 
 
@@ -12123,15 +11955,8 @@ class CodecStream extends TransformStream {
 const CODEC_DEFLATE = "deflate";
 const CODEC_INFLATE = "inflate";
 const ERR_INVALID_SIGNATURE = "Invalid signature";
-const MESSAGE_EVENT_TYPE = "message";
-const MESSAGE_START = "start";
-const MESSAGE_PULL = "pull";
-const MESSAGE_DATA = "data";
-const MESSAGE_ABORT = "abort";
-const COMPRESSION_FORMAT = "deflate-raw";
-const codec_UNDEFINED_TYPE = "undefined";
 
-class Inflate {
+class codec_Inflate {
 
 	constructor(codecConstructor, {
 		signature,
@@ -12140,82 +11965,65 @@ class Inflate {
 		compressed,
 		zipCrypto,
 		passwordVerification,
-		encryptionStrength,
-		useCompressionStream
+		encryptionStrength
 	}, { chunkSize }) {
-		const codec = this;
-		codec.start = async () => {
-			const encrypted = Boolean(password);
-			Object.assign(codec, {
-				signature,
-				encrypted,
-				signed,
-				compressed,
-				zipCrypto,
-				stream: createReadableStream(codec)
-			});
-			if (encrypted) {
-				if (zipCrypto) {
-					codec.stream = codec.stream.pipeThrough(new ZipCryptoDecryptionStream(password, passwordVerification));
-				} else {
-					codec.decryptStream = new AESDecryptionStream(password, signed, encryptionStrength);
-					codec.stream = codec.stream.pipeThrough(codec.decryptStream);
-				}
-			}
-			if (compressed) {
-				if ((useCompressionStream !== undefined && !useCompressionStream) || typeof DecompressionStream == codec_UNDEFINED_TYPE) {
-					pipeCodecStream();
-				} else {
-					try {
-						codec.stream = codec.stream.pipeThrough(new DecompressionStream(COMPRESSION_FORMAT));
-					} catch (_error) {
-						pipeCodecStream();
-					}
-				}
-			}
-			if ((!encrypted || zipCrypto) && signed) {
-				const tee = codec.stream.tee();
-				codec.stream = tee[0];
-				codec.crc32Stream = tee[1].pipeThrough(new crc32_stream());
-			}
-			codec.reader = codec.stream.getReader();
-			await codec.read();
-		};
-		codec.abort = () => codec.aborted = true;
-
-		function pipeCodecStream() {
-			codec.stream = codec.stream.pipeThrough(new codec_stream(codecConstructor, { chunkSize }));
-		}
+		const encrypted = Boolean(password);
+		Object.assign(this, {
+			signature,
+			encrypted,
+			signed,
+			compressed,
+			inflate: compressed && new codecConstructor({ chunkSize }),
+			crc32: signed && new codecs_crc32(),
+			zipCrypto,
+			decrypt: encrypted && zipCrypto ?
+				new ZipCryptoDecrypt(password, passwordVerification) :
+				new AESDecrypt(password, signed, encryptionStrength)
+		});
 	}
 
-	async read() {
+	async append(data) {
 		const codec = this;
-		const { value, done } = await codec.reader.read();
-		if (value && value.length) {
-			codec.ondata({ value: { data: new Uint8Array(value) } });
+		if (codec.encrypted && data.length) {
+			data = await codec.decrypt.append(data);
 		}
-		if (done) {
-			let signature;
-			if (codec.encrypted && !codec.zipCrypto) {
-				if (!codec.decryptStream.valid) {
-					throw new Error(ERR_INVALID_SIGNATURE);
-				}
-			}
-			if ((!codec.encrypted || codec.zipCrypto) && codec.signed) {
-				signature = await codec.crc32Stream.getReader().read();
-				const dataViewSignature = new DataView(signature.value.buffer);
-				if (codec.signature != dataViewSignature.getUint32(0, false)) {
-					throw new Error(ERR_INVALID_SIGNATURE);
-				}
-			}
-			codec.ondata({ value: { signature }, done });
-		} else {
-			await codec.read();
+		if (codec.compressed && data.length) {
+			data = await codec.inflate.append(data);
 		}
+		if ((!codec.encrypted || codec.zipCrypto) && codec.signed && data.length) {
+			codec.crc32.append(data);
+		}
+		return data;
+	}
+
+	async flush() {
+		const codec = this;
+		let signature;
+		let data = new Uint8Array(0);
+		if (codec.encrypted) {
+			const result = codec.decrypt.flush();
+			if (!result.valid) {
+				throw new Error(ERR_INVALID_SIGNATURE);
+			}
+			data = result.data;
+		}
+		if ((!codec.encrypted || codec.zipCrypto) && codec.signed) {
+			const dataViewSignature = new DataView(new Uint8Array(4).buffer);
+			signature = codec.crc32.get();
+			dataViewSignature.setUint32(0, signature);
+			if (codec.signature != dataViewSignature.getUint32(0, false)) {
+				throw new Error(ERR_INVALID_SIGNATURE);
+			}
+		}
+		if (codec.compressed) {
+			data = (await codec.inflate.append(data)) || new Uint8Array(0);
+			await codec.inflate.flush();
+		}
+		return { data, signature };
 	}
 }
 
-class Deflate {
+class codec_Deflate {
 
 	constructor(codecConstructor, {
 		encrypted,
@@ -12225,97 +12033,67 @@ class Deflate {
 		zipCrypto,
 		password,
 		passwordVerification,
-		encryptionStrength,
-		useCompressionStream
+		encryptionStrength
 	}, { chunkSize }) {
-		const codec = this;
-		codec.start = async () => {
-			Object.assign(this, {
-				encrypted,
-				signed,
-				compressed,
-				zipCrypto,
-				stream: createReadableStream(codec)
-			});
-			if ((!encrypted || zipCrypto) && signed) {
-				const tee = codec.stream.tee();
-				codec.stream = tee[0];
-				codec.crc32Stream = tee[1].pipeThrough(new crc32_stream({ chunkSize }));
-			}
-			if (compressed) {
-				if ((useCompressionStream !== undefined && !useCompressionStream) || typeof CompressionStream == codec_UNDEFINED_TYPE) {
-					pipeCodecStream();
-				} else {
-					try {
-						codec.stream = codec.stream.pipeThrough(new CompressionStream(COMPRESSION_FORMAT));
-					} catch (_error) {
-						pipeCodecStream();
-					}
-				}
-			}
-			if (encrypted) {
-				if (zipCrypto) {
-					codec.stream = codec.stream.pipeThrough(new ZipCryptoEncryptionStream(password, passwordVerification));
-				} else {
-					codec.encryptStream = new AESEncryptionStream(password, encryptionStrength);
-					codec.stream = codec.stream.pipeThrough(codec.encryptStream);
-				}
-			}
-			codec.reader = codec.stream.getReader();
-			await codec.read();
-		};
-		codec.abort = () => codec.aborted = true;
-
-		function pipeCodecStream() {
-			codec.stream = codec.stream.pipeThrough(new codec_stream(codecConstructor, { chunkSize, level }));
-		}
+		Object.assign(this, {
+			encrypted,
+			signed,
+			compressed,
+			deflate: compressed && new codecConstructor({ level: level || 5, chunkSize }),
+			crc32: signed && new codecs_crc32(),
+			zipCrypto,
+			encrypt: encrypted && zipCrypto ?
+				new ZipCryptoEncrypt(password, passwordVerification) :
+				new AESEncrypt(password, encryptionStrength)
+		});
 	}
 
-	async read() {
+	async append(inputData) {
 		const codec = this;
-		const { value, done } = await codec.reader.read();
-		if (value && value.length) {
-			codec.ondata({ value: { data: value } });
+		let data = inputData;
+		if (codec.compressed && inputData.length) {
+			data = await codec.deflate.append(inputData);
 		}
-		if (done) {
-			let signature;
-			if (codec.encrypted && !codec.zipCrypto) {
-				signature = codec.encryptStream.signature;
-			}
-			if ((!codec.encrypted || codec.zipCrypto) && codec.signed) {
-				signature = await codec.crc32Stream.getReader().read();
-				signature = new DataView(signature.value.buffer).getUint32(0);
-			}
-			codec.ondata({ value: { signature }, done });
-		} else {
-			await codec.read();
+		if (codec.encrypted && data.length) {
+			data = await codec.encrypt.append(data);
 		}
+		if ((!codec.encrypted || codec.zipCrypto) && codec.signed && inputData.length) {
+			codec.crc32.append(inputData);
+		}
+		return data;
 	}
 
+	async flush() {
+		const codec = this;
+		let signature;
+		let data = new Uint8Array(0);
+		if (codec.compressed) {
+			data = (await codec.deflate.flush()) || new Uint8Array(0);
+		}
+		if (codec.encrypted) {
+			data = await codec.encrypt.append(data);
+			const result = codec.encrypt.flush();
+			signature = result.signature;
+			const newData = new Uint8Array(data.length + result.data.length);
+			newData.set(data, 0);
+			newData.set(result.data, data.length);
+			data = newData;
+		}
+		if ((!codec.encrypted || codec.zipCrypto) && codec.signed) {
+			signature = codec.crc32.get();
+		}
+		return { data, signature };
+	}
 }
 
 
 
 function createCodec(codecConstructor, options, config) {
 	if (options.codecType.startsWith(CODEC_DEFLATE)) {
-		return new Deflate(codecConstructor, options, config);
+		return new codec_Deflate(codecConstructor, options, config);
 	} else if (options.codecType.startsWith(CODEC_INFLATE)) {
-		return new Inflate(codecConstructor, options, config);
+		return new codec_Inflate(codecConstructor, options, config);
 	}
-}
-
-function createReadableStream(codec) {
-	return new ReadableStream({
-		async pull(controller) {
-			const { value, done } = await codec.pull();
-			if (value) {
-				controller.enqueue(value);
-			}
-			if (done || codec.aborted) {
-				controller.close();
-			}
-		}
-	});
 }
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/codec-pool-worker.js
 /*
@@ -12350,11 +12128,14 @@ function createReadableStream(codec) {
 
 
 
+const MESSAGE_INIT = "init";
+const MESSAGE_APPEND = "append";
+const MESSAGE_FLUSH = "flush";
+const MESSAGE_EVENT_TYPE = "message";
+
 let classicWorkersSupported = true;
 
-
-
-function getWorker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts) {
+/* harmony default export */ const codec_pool_worker = ((workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts) => {
 	Object.assign(workerData, {
 		busy: true,
 		codecConstructor,
@@ -12372,53 +12153,62 @@ function getWorker(workerData, codecConstructor, options, config, onTaskFinished
 		}
 	});
 	return webWorker ? createWebWorkerInterface(workerData, config) : createWorkerInterface(workerData, config);
-}
+});
 
 function createWorkerInterface(workerData, config) {
 	const interfaceCodec = createCodec(workerData.codecConstructor, workerData.options, config);
-	const codec = {
-		abort() {
-			interfaceCodec.abort();
-			workerData.onTaskFinished();
+	return {
+		async append(data) {
+			try {
+				return await interfaceCodec.append(data);
+			} catch (error) {
+				workerData.onTaskFinished();
+				throw error;
+			}
 		},
-		start() {
-			return interfaceCodec.start();
+		async flush() {
+			try {
+				return await interfaceCodec.flush();
+			} finally {
+				workerData.onTaskFinished();
+			}
+		},
+		abort() {
+			workerData.onTaskFinished();
 		}
 	};
-	interfaceCodec.pull = () => codec.pull();
-	interfaceCodec.ondata = data => ondata(workerData, codec, data);
-	return codec;
 }
 
-function createWebWorkerInterface(workerData, { baseURL, chunkSize }) {
+function createWebWorkerInterface(workerData, config) {
+	let messageTask;
 	const workerOptions = { type: "module" };
 	if (!workerData.interface) {
 		if (!classicWorkersSupported) {
-			workerData.worker = getWorker(workerOptions);
+			workerData.worker = getWorker(workerOptions, config.baseURL);
 		} else {
 			try {
-				workerData.worker = getWorker({});
+				workerData.worker = getWorker({}, config.baseURL);
 			} catch (_error) {
 				classicWorkersSupported = false;
-				workerData.worker = getWorker(workerOptions);
+				workerData.worker = getWorker(workerOptions, config.baseURL);
 			}
 		}
 		workerData.worker.addEventListener(MESSAGE_EVENT_TYPE, onMessage, false);
 		workerData.interface = {
-			abort() {
-				sendMessage({ type: MESSAGE_ABORT });
-				workerData.onTaskFinished();
+			append(data) {
+				return initAndSendMessage({ type: MESSAGE_APPEND, data });
 			},
-			start() {
-				const options = workerData.options;
-				const scripts = workerData.scripts.slice(1);
-				sendMessage({ type: MESSAGE_START, scripts, options, config: { chunkSize } });
+			flush() {
+				return initAndSendMessage({ type: MESSAGE_FLUSH });
+			},
+			abort() {
+				workerData.onTaskFinished();
 			}
 		};
 	}
 	return workerData.interface;
 
-	function getWorker(options) {
+	function getWorker(options, baseURL) {
 		let url, scriptUrl;
 		url = workerData.scripts[0];
 		if (typeof url == "function") {
@@ -12432,8 +12222,18 @@ function createWebWorkerInterface(workerData, { baseURL, chunkSize }) {
 		return new Worker(scriptUrl, options);
 	}
 
+	async function initAndSendMessage(message) {
+		if (!messageTask) {
+			const options = workerData.options;
+			const scripts = workerData.scripts.slice(1);
+			await sendMessage({ scripts, type: MESSAGE_INIT, options, config: { chunkSize: config.chunkSize } });
+		}
+		return sendMessage(message);
+	}
+
 	function sendMessage(message) {
 		const worker = workerData.worker;
+		const result = new Promise((resolve, reject) => messageTask = { resolve, reject });
 		try {
 			if (message.data) {
 				try {
@@ -12446,48 +12246,35 @@ function createWebWorkerInterface(workerData, { baseURL, chunkSize }) {
 				worker.postMessage(message);
 			}
 		} catch (error) {
+			messageTask.reject(error);
+			messageTask = null;
 			workerData.onTaskFinished();
-			throw error;
 		}
+		return result;
 	}
 
-	async function onMessage(event) {
+	function onMessage(event) {
 		const message = event.data;
-		const reponseError = message.error;
-		const codec = workerData.interface;
-		try {
+		if (messageTask) {
+			const reponseError = message.error;
+			const type = message.type;
 			if (reponseError) {
 				const error = new Error(reponseError.message);
 				error.stack = reponseError.stack;
-				codec.onerror(error);
+				messageTask.reject(error);
+				messageTask = null;
 				workerData.onTaskFinished();
-			} else {
-				if (message.type == MESSAGE_PULL) {
-					const { value, done } = await codec.pull();
-					sendMessage({ type: MESSAGE_DATA, data: value, done, messageId: message.messageId });
-				}
-				if (message.type == MESSAGE_DATA) {
-					const { value } = message.data;
-					if (value && value.data) {
-						value.data = new Uint8Array(value.data);
-					}
-					await ondata(workerData, codec, message.data);
+			} else if (type == MESSAGE_INIT || type == MESSAGE_FLUSH || type == MESSAGE_APPEND) {
+				const data = message.data;
+				if (type == MESSAGE_FLUSH) {
+					messageTask.resolve({ data: new Uint8Array(data), signature: message.signature });
+					messageTask = null;
+					workerData.onTaskFinished();
+				} else {
+					messageTask.resolve(data && new Uint8Array(data));
 				}
 			}
-		} catch (error) {
-			codec.onerror(error);
-			workerData.onTaskFinished();
 		}
-	}
-}
-
-async function ondata(workerData, codec, data) {
-	let { value, done } = data;
-	if (done) {
-		await codec.ondata({ value: { data: value.data, signature: value.signature }, done });
-		workerData.onTaskFinished();
-	} else if (value.data) {
-		await codec.ondata({ value: { data: value.data } });
 	}
 }
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/codecs/codec-pool.js
@@ -12529,23 +12316,19 @@ const pendingRequests = [];
 
 
 
-let indexWorker = 0;
-
 function codec_pool_createCodec(codecConstructor, options, config) {
 	const streamCopy = !options.compressed && !options.signed && !options.encrypted;
 	const webWorker = !streamCopy && (options.useWebWorkers || (options.useWebWorkers === undefined && config.useWebWorkers));
 	const scripts = webWorker && config.workerScripts ? config.workerScripts[options.codecType] : [];
-	options.useCompressionStream = options.useCompressionStream === undefined ? config.useCompressionStream : options.useCompressionStream;
 	if (pool.length < config.maxWorkers) {
-		const workerData = { indexWorker };
-		indexWorker++;
+		const workerData = {};
 		pool.push(workerData);
-		return getWorker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts);
+		return codec_pool_worker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts);
 	} else {
 		const workerData = pool.find(workerData => !workerData.busy);
 		if (workerData) {
 			clearTerminateTimeout(workerData);
-			return getWorker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts);
+			return codec_pool_worker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts);
 		} else {
 			return new Promise(resolve => pendingRequests.push({ resolve, codecConstructor, options, webWorker, scripts }));
 		}
@@ -12554,7 +12337,7 @@ function codec_pool_createCodec(codecConstructor, options, config) {
 	function onTaskFinished(workerData) {
 		if (pendingRequests.length) {
 			const [{ resolve, codecConstructor, options, webWorker, scripts }] = pendingRequests.splice(0, 1);
-			resolve(getWorker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts));
+			resolve(codec_pool_worker(workerData, codecConstructor, options, config, onTaskFinished, webWorker, scripts));
 		} else if (workerData.worker) {
 			clearTerminateTimeout(workerData);
 			if (Number.isFinite(config.terminateWorkerTimeout) && config.terminateWorkerTimeout >= 0) {
@@ -12583,7 +12366,7 @@ function terminateWorkers() {
 	});
 }
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/z-worker-inline.js
-var e=e=>{if("function"==typeof URL.createObjectURL){const t=()=>URL.createObjectURL(new Blob(['const{Array:t,Object:e,Math:n,Error:r,Uint8Array:i,Uint16Array:s,Uint32Array:o,Int32Array:f,DataView:c,TextEncoder:a,crypto:l,postMessage:u,TransformStream:w,ReadableStream:h,WritableStream:d,CompressionStream:p,DecompressionStream:y}=globalThis,b=[];for(let t=0;256>t;t++){let e=t;for(let t=0;8>t;t++)1&e?e=e>>>1^3988292384:e>>>=1;b[t]=e}class m{constructor(t){this.t=t||-1}append(t){let e=0|this.t;for(let n=0,r=0|t.length;r>n;n++)e=e>>>8^b[255&(e^t[n])];this.t=e}get(){return~this.t}}class k extends w{constructor(){super({start(){this.i=new m},transform(t){t&&t.length&&this.i.append(t)},flush(t){const e=new i(4);new c(e.buffer).setUint32(0,this.i.get()),t.enqueue(e)}})}}const g={concat(t,e){if(0===t.length||0===e.length)return t.concat(e);const n=t[t.length-1],r=g.o(n);return 32===r?t.concat(e):g.l(e,r,0|n,t.slice(0,t.length-1))},u(t){const e=t.length;if(0===e)return 0;const n=t[e-1];return 32*(e-1)+g.o(n)},h(t,e){if(32*t.length<e)return t;const r=(t=t.slice(0,n.ceil(e/32))).length;return e&=31,r>0&&e&&(t[r-1]=g.p(e,t[r-1]&2147483648>>e-1,1)),t},p:(t,e,n)=>32===t?e:(n?0|e:e<<32-t)+1099511627776*t,o:t=>n.round(t/1099511627776)||32,l(t,e,n,r){for(void 0===r&&(r=[]);e>=32;e-=32)r.push(n),n=0;if(0===e)return r.concat(t);for(let i=0;i<t.length;i++)r.push(n|t[i]>>>e),n=t[i]<<32-e;const i=t.length?t[t.length-1]:0,s=g.o(i);return r.push(g.p(e+s&31,e+s>32?n:r.pop(),1)),r}},v={m:{k(t){const e=g.u(t)/8,n=new i(e);let r;for(let i=0;e>i;i++)0==(3&i)&&(r=t[i/4]),n[i]=r>>>24,r<<=8;return n},g(t){const e=[];let n,r=0;for(n=0;n<t.length;n++)r=r<<8|t[n],3==(3&n)&&(e.push(r),r=0);return 3&n&&e.push(g.p(8*(3&n),r)),e}}},S={v:function(t){t?(this.S=t.S.slice(0),this._=t._.slice(0),this.C=t.C):this.reset()}};S.v.prototype={blockSize:512,reset:function(){const t=this;return t.S=this.I.slice(0),t._=[],t.C=0,t},update:function(t){const e=this;"string"==typeof t&&(t=v.A.g(t));const n=e._=g.concat(e._,t),i=e.C,s=e.C=i+g.u(t);if(s>9007199254740991)throw new r("Cannot hash more than 2^53 - 1 bits");const f=new o(n);let c=0;for(let t=e.blockSize+i-(e.blockSize+i&e.blockSize-1);s>=t;t+=e.blockSize)e.V(f.subarray(16*c,16*(c+1))),c+=1;return n.splice(0,16*c),e},P:function(){const t=this;let e=t._;const r=t.S;e=g.concat(e,[g.p(1,1)]);for(let t=e.length+2;15&t;t++)e.push(0);for(e.push(n.floor(t.C/4294967296)),e.push(0|t.C);e.length;)t.V(e.splice(0,16));return t.reset(),r},I:[1732584193,4023233417,2562383102,271733878,3285377520],B:[1518500249,1859775393,2400959708,3395469782],D:(t,e,n,r)=>t>19?t>39?t>59?t>79?void 0:e^n^r:e&n|e&r|n&r:e^n^r:e&n|~e&r,M:(t,e)=>e<<t|e>>>32-t,V:function(e){const r=this,i=r.S,s=t(80);for(let t=0;16>t;t++)s[t]=e[t];let o=i[0],f=i[1],c=i[2],a=i[3],l=i[4];for(let t=0;79>=t;t++){16>t||(s[t]=r.M(1,s[t-3]^s[t-8]^s[t-14]^s[t-16]));const e=r.M(5,o)+r.D(t,f,c,a)+l+s[t]+r.B[n.floor(t/20)]|0;l=a,a=c,c=r.M(30,f),f=o,o=e}i[0]=i[0]+o|0,i[1]=i[1]+f|0,i[2]=i[2]+c|0,i[3]=i[3]+a|0,i[4]=i[4]+l|0}};const z={getRandomValues(t){const e=new o(t.buffer),r=t=>{let e=987654321;const r=4294967295;return()=>(e=36969*(65535&e)+(e>>16)&r,(((e<<16)+(t=18e3*(65535&t)+(t>>16)&r)&r)/4294967296+.5)*(n.random()>.5?1:-1))};for(let i,s=0;s<t.length;s+=4){const t=r(4294967296*(i||n.random()));i=987654071*t(),e[s/4]=4294967296*t()|0}return t}},_={importKey:t=>new _.R(v.m.g(t)),U(t,e,n,i){if(n=n||1e4,0>i||0>n)throw new r("invalid params to pbkdf2");const s=1+(i>>5)<<2;let o,f,a,l,u;const w=new ArrayBuffer(s),h=new c(w);let d=0;const p=g;for(e=v.m.g(e),u=1;(s||1)>d;u++){for(o=f=t.encrypt(p.concat(e,[u])),a=1;n>a;a++)for(f=t.encrypt(f),l=0;l<f.length;l++)o[l]^=f[l];for(a=0;(s||1)>d&&a<o.length;a++)h.setInt32(d,o[a]),d+=4}return w.slice(0,i/8)},R:class{constructor(t){const e=this,n=e.T=S.v,r=[[],[]],i=n.prototype.blockSize/32;e.j=[new n,new n],t.length>i&&(t=n.hash(t));for(let e=0;i>e;e++)r[0][e]=909522486^t[e],r[1][e]=1549556828^t[e];e.j[0].update(r[0]),e.j[1].update(r[1]),e.H=new n(e.j[0])}reset(){const t=this;t.H=new t.T(t.j[0]),t.K=!1}update(t){this.K=!0,this.H.update(t)}digest(){const t=this,e=t.H.P(),n=new t.T(t.j[1]).update(e).P();return t.reset(),n}encrypt(t){if(this.K)throw new r("encrypt on already updated hmac called!");return this.update(t),this.digest(t)}}},C={name:"PBKDF2"},I=e.assign({hash:{name:"HMAC"}},C),A=e.assign({iterations:1e3,hash:{name:"SHA-1"}},C),x=["deriveBits"],V=[8,12,16],P=[16,24,32],B=[0,0,0,0],D=void 0!==l,E=D&&void 0!==l.subtle,M=D&&"function"==typeof l.getRandomValues,R=D&&E&&"function"==typeof l.subtle.importKey,U=D&&E&&"function"==typeof l.subtle.deriveBits,T=v.m,j=class{constructor(t){const e=this;e.L=[[[],[],[],[],[]],[[],[],[],[],[]]],e.L[0][0][0]||e.W();const n=e.L[0][4],i=e.L[1],s=t.length;let o,f,c,a=1;if(4!==s&&6!==s&&8!==s)throw new r("invalid aes key size");for(e.B=[f=t.slice(0),c=[]],o=s;4*s+28>o;o++){let t=f[o-1];(o%s==0||8===s&&o%s==4)&&(t=n[t>>>24]<<24^n[t>>16&255]<<16^n[t>>8&255]<<8^n[255&t],o%s==0&&(t=t<<8^t>>>24^a<<24,a=a<<1^283*(a>>7))),f[o]=f[o-s]^t}for(let t=0;o;t++,o--){const e=f[3&t?o:o-4];c[t]=4>=o||4>t?e:i[0][n[e>>>24]]^i[1][n[e>>16&255]]^i[2][n[e>>8&255]]^i[3][n[255&e]]}}encrypt(t){return this.F(t,0)}decrypt(t){return this.F(t,1)}W(){const t=this.L[0],e=this.L[1],n=t[4],r=e[4],i=[],s=[];let o,f,c,a;for(let t=0;256>t;t++)s[(i[t]=t<<1^283*(t>>7))^t]=t;for(let l=o=0;!n[l];l^=f||1,o=s[o]||1){let s=o^o<<1^o<<2^o<<3^o<<4;s=s>>8^255&s^99,n[l]=s,r[s]=l,a=i[c=i[f=i[l]]];let u=16843009*a^65537*c^257*f^16843008*l,w=257*i[s]^16843008*s;for(let n=0;4>n;n++)t[n][l]=w=w<<24^w>>>8,e[n][s]=u=u<<24^u>>>8}for(let n=0;5>n;n++)t[n]=t[n].slice(0),e[n]=e[n].slice(0)}F(t,e){if(4!==t.length)throw new r("invalid aes block size");const n=this.B[e],i=n.length/4-2,s=[0,0,0,0],o=this.L[e],f=o[0],c=o[1],a=o[2],l=o[3],u=o[4];let w,h,d,p=t[0]^n[0],y=t[e?3:1]^n[1],b=t[2]^n[2],m=t[e?1:3]^n[3],k=4;for(let t=0;i>t;t++)w=f[p>>>24]^c[y>>16&255]^a[b>>8&255]^l[255&m]^n[k],h=f[y>>>24]^c[b>>16&255]^a[m>>8&255]^l[255&p]^n[k+1],d=f[b>>>24]^c[m>>16&255]^a[p>>8&255]^l[255&y]^n[k+2],m=f[m>>>24]^c[p>>16&255]^a[y>>8&255]^l[255&b]^n[k+3],k+=4,p=w,y=h,b=d;for(let t=0;4>t;t++)s[e?3&-t:t]=u[p>>>24]<<24^u[y>>16&255]<<16^u[b>>8&255]<<8^u[255&m]^n[k++],w=p,p=y,y=b,b=m,m=w;return s}},H=class{constructor(t,e){this.O=t,this.q=e,this.G=e}reset(){this.G=this.q}update(t){return this.J(this.O,t,this.G)}N(t){if(255==(t>>24&255)){let e=t>>16&255,n=t>>8&255,r=255&t;255===e?(e=0,255===n?(n=0,255===r?r=0:++r):++n):++e,t=0,t+=e<<16,t+=n<<8,t+=r}else t+=1<<24;return t}X(t){0===(t[0]=this.N(t[0]))&&(t[1]=this.N(t[1]))}J(t,e,n){let r;if(!(r=e.length))return[];const i=g.u(e);for(let i=0;r>i;i+=4){this.X(n);const r=t.encrypt(n);e[i]^=r[0],e[i+1]^=r[1],e[i+2]^=r[2],e[i+3]^=r[3]}return g.h(e,i)}},K=_.R;class L extends w{constructor(n,s,o){let f;super({start(){e.assign(this,{ready:new Promise((t=>this.Y=t)),password:n,signed:s,Z:o-1,pending:new i(0)})},async transform(e,n){if(e&&e.length){const s=this;if(s.password){const n=s.password;s.password=null;const i=G(e,0,V[s.Z]+2);await(async(t,e,n)=>{await O(t,n,G(e,0,V[t.Z]));const i=G(e,V[t.Z]),s=t.keys.passwordVerification;if(s[0]!=i[0]||s[1]!=i[1])throw new r("Invalid pasword")})(s,i,n),s.$=new H(new j(s.keys.key),t.from(B)),s.tt=new K(s.keys.et),e=G(e,V[s.Z]+2),s.Y()}else await s.ready;const o=new i(e.length-10-(e.length-10)%16);n.enqueue(F(s,e,o,0,10,!0))}},async flush(t){const e=this;await e.ready;const n=e.pending,r=G(n,0,n.length-10),s=G(n,n.length-10);let o=new i(0);if(r.length){const t=N(T,r);e.tt.update(t);const n=e.$.update(t);o=J(T,n)}if(f.valid=!0,e.signed){const t=G(J(T,e.tt.digest()),0,10);for(let e=0;10>e;e++)t[e]!=s[e]&&(f.valid=!1)}t.enqueue(o)}}),f=this}}class W extends w{constructor(n,r){let s;super({start(){e.assign(this,{ready:new Promise((t=>this.Y=t)),password:n,Z:r-1,pending:new i(0)})},async transform(e,n){if(e&&e.length){const r=this;let s=new i(0);if(r.password){const e=r.password;r.password=null,s=await(async(t,e)=>{const n=(r=new i(V[t.Z]),M?l.getRandomValues(r):z.getRandomValues(r));var r;return await O(t,e,n),q(n,t.keys.passwordVerification)})(r,e),r.$=new H(new j(r.keys.key),t.from(B)),r.tt=new K(r.keys.et),r.Y()}else await r.ready;const o=new i(s.length+e.length-e.length%16);o.set(s,0),n.enqueue(F(r,e,o,s.length,0))}},async flush(t){const e=this;await e.ready;let n=new i(0);if(e.pending.length){const t=e.$.update(N(T,e.pending));e.tt.update(t),n=J(T,t)}s.signature=J(T,e.tt.digest()).slice(0,10),t.enqueue(q(n,s.signature))}}),s=this}}function F(t,e,n,r,s,o){const f=e.length-s;let c;for(t.pending.length&&(e=q(t.pending,e),n=((t,e)=>{if(e&&e>t.length){const n=t;(t=new i(e)).set(n,0)}return t})(n,f-f%16)),c=0;f-16>=c;c+=16){const i=N(T,G(e,c,c+16));o&&t.tt.update(i);const s=t.$.update(i);o||t.tt.update(s),n.set(J(T,s),c+r)}return t.pending=G(e,c),n}async function O(t,n,r){const s=(t=>{if(void 0===a){const e=new i((t=unescape(encodeURIComponent(t))).length);for(let n=0;n<e.length;n++)e[n]=t.charCodeAt(n);return e}return(new a).encode(t)})(n),o=await((t,e,n,r,i)=>R?l.subtle.importKey("raw",e,n,!1,i):_.importKey(e))(0,s,I,0,x),f=await(async(t,e,n)=>U?await l.subtle.deriveBits(t,e,n):_.U(e,t.salt,A.iterations,n))(e.assign({salt:r},A),o,8*(2*P[t.Z]+2)),c=new i(f);t.keys={key:N(T,G(c,0,P[t.Z])),et:N(T,G(c,P[t.Z],2*P[t.Z])),passwordVerification:G(c,2*P[t.Z])}}function q(t,e){let n=t;return t.length+e.length&&(n=new i(t.length+e.length),n.set(t,0),n.set(e,t.length)),n}function G(t,e,n){return t.subarray(e,n)}function J(t,e){return t.k(e)}function N(t,e){return t.g(e)}class Q extends w{constructor(t,n){let i;super({start(){e.assign(this,{password:t,passwordVerification:n}),$(this,t)},transform(t,e){if(t&&t.length){const n=this;if(n.password){const e=Y(n,t.subarray(0,12));if(n.password=null,e[11]!=n.passwordVerification)throw new r("Invalid pasword");t=t.subarray(12)}e.enqueue(Y(n,t))}},flush(){i.valid=!0}}),i=this}}class X extends w{constructor(t,n){super({start(){e.assign(this,{password:t,passwordVerification:n}),$(this,t)},transform(t,e){if(t&&t.length){const n=this;let r,s;if(n.password){n.password=null;const e=l.getRandomValues(new i(12));e[11]=n.passwordVerification,r=new i(t.length+e.length),r.set(Z(n,e),0),s=12}else r=new i(t.length),s=0;r.set(Z(n,t),s),e.enqueue(r)}},flush(){}})}}function Y(t,e){const n=new i(e.length);for(let r=0;r<e.length;r++)n[r]=et(t)^e[r],tt(t,n[r]);return n}function Z(t,e){const n=new i(e.length);for(let r=0;r<e.length;r++)n[r]=et(t)^e[r],tt(t,e[r]);return n}function $(t,e){t.keys=[305419896,591751049,878082192],t.nt=new m(t.keys[0]),t.rt=new m(t.keys[2]);for(let n=0;n<e.length;n++)tt(t,e.charCodeAt(n))}function tt(t,e){t.nt.append([e]),t.keys[0]=~t.nt.get(),t.keys[1]=rt(t.keys[1]+nt(t.keys[0])),t.keys[1]=rt(n.imul(t.keys[1],134775813)+1),t.rt.append([t.keys[1]>>>24]),t.keys[2]=~t.rt.get()}function et(t){const e=2|t.keys[2];return nt(n.imul(e,1^e)>>>8)}function nt(t){return 255&t}function rt(t){return 4294967295&t}class it extends w{constructor(t,e){super({start(){this.it=new t(e)},transform(t,e){(t=this.it.append(t))&&t.length&&e.enqueue(t)},flush(t){const e=this.it.flush();e&&e.length&&t.enqueue(e)}})}}class st{constructor(t,{signature:n,password:r,signed:i,compressed:s,zipCrypto:o,passwordVerification:f,encryptionStrength:c,st:a},{ot:l}){const u=this;function w(){u.stream=u.stream.pipeThrough(new it(t,{ot:l}))}u.start=async()=>{const t=!!r;if(e.assign(u,{signature:n,encrypted:t,signed:i,compressed:s,zipCrypto:o,stream:ft(u)}),t&&(o?u.stream=u.stream.pipeThrough(new Q(r,f)):(u.ft=new L(r,i,c),u.stream=u.stream.pipeThrough(u.ft))),s)if(void 0!==a&&!a||void 0===y)w();else try{u.stream=u.stream.pipeThrough(new y("deflate-raw"))}catch(t){w()}if((!t||o)&&i){const t=u.stream.tee();u.stream=t[0],u.ct=t[1].pipeThrough(new k)}u.lt=u.stream.getReader(),await u.read()},u.abort=()=>u.aborted=!0}async read(){const t=this,{value:e,done:n}=await t.lt.read();if(e&&e.length&&t.ut({value:{data:new i(e)}}),n){let e;if(t.encrypted&&!t.zipCrypto&&!t.ft.valid)throw new r("Invalid signature");if((!t.encrypted||t.zipCrypto)&&t.signed){e=await t.ct.getReader().read();const n=new c(e.value.buffer);if(t.signature!=n.getUint32(0,!1))throw new r("Invalid signature")}t.ut({value:{signature:e},done:n})}else await t.read()}}class ot{constructor(t,{encrypted:n,signed:r,compressed:i,level:s,zipCrypto:o,password:f,passwordVerification:c,encryptionStrength:a,st:l},{ot:u}){const w=this;function h(){w.stream=w.stream.pipeThrough(new it(t,{ot:u,level:s}))}w.start=async()=>{if(e.assign(this,{encrypted:n,signed:r,compressed:i,zipCrypto:o,stream:ft(w)}),(!n||o)&&r){const t=w.stream.tee();w.stream=t[0],w.ct=t[1].pipeThrough(new k({ot:u}))}if(i)if(void 0!==l&&!l||void 0===p)h();else try{w.stream=w.stream.pipeThrough(new p("deflate-raw"))}catch(t){h()}n&&(o?w.stream=w.stream.pipeThrough(new X(f,c)):(w.wt=new W(f,a),w.stream=w.stream.pipeThrough(w.wt))),w.lt=w.stream.getReader(),await w.read()},w.abort=()=>w.aborted=!0}async read(){const t=this,{value:e,done:n}=await t.lt.read();if(e&&e.length&&t.ut({value:{data:e}}),n){let e;t.encrypted&&!t.zipCrypto&&(e=t.wt.signature),t.encrypted&&!t.zipCrypto||!t.signed||(e=await t.ct.getReader().read(),e=new c(e.value.buffer).getUint32(0)),t.ut({value:{signature:e},done:n})}else await t.read()}}function ft(t){return new h({async pull(e){const{value:n,done:r}=await t.pull();n&&e.enqueue(n),(r||t.aborted)&&e.close()}})}const ct=new Map;let at,lt=0;function ut(t){if(t.data){const e=t.data.value.data;if(e&&e.length)try{t.data.value.data=e.buffer,u(t,[t.data.value.data])}catch(e){u(t)}else u(t)}else u(t)}addEventListener("message",(async t=>{const e=t.data,n=e.type;try{if("start"==n&&(async t=>{try{t.scripts&&t.scripts.length&&importScripts.apply(void 0,t.scripts);const e=t.options;let n;self.initCodec&&self.initCodec(),e.codecType.startsWith("deflate")?n=self.Deflate:e.codecType.startsWith("inflate")&&(n=self.Inflate),at=((t,e,n)=>e.codecType.startsWith("deflate")?new ot(t,e,n):e.codecType.startsWith("inflate")?new st(t,e,n):void 0)(n,e,t.config),at.ut=t=>ut({type:"data",data:t}),at.onerror=t=>u({error:{message:t.message,stack:t.stack}}),at.pull=()=>{const t=new Promise(((t,e)=>ct.set(lt,{resolve:t,reject:e})));return ut({type:"pull",messageId:lt}),lt++,t},await at.start()}catch(t){u({error:{message:t.message,stack:t.stack}})}})(e),"data"==n){const{resolve:t}=ct.get(e.messageId);ct.delete(e.messageId),t({value:new i(e.data),done:e.done})}"abort"==n&&at.abort()}catch(t){u({error:{message:t.message,stack:t.stack}})}}));const wt=(()=>{const e=-2;function o(e){return f(e.map((([e,n])=>new t(e).fill(n,0,e))))}function f(e){return e.reduce(((e,n)=>e.concat(t.isArray(n)?f(n):n)),[])}const c=[0,1,2,3].concat(...o([[2,4],[2,5],[4,6],[4,7],[8,8],[8,9],[16,10],[16,11],[32,12],[32,13],[64,14],[64,15],[2,0],[1,16],[1,17],[2,18],[2,19],[4,20],[4,21],[8,22],[8,23],[16,24],[16,25],[32,26],[32,27],[64,28],[64,29]]));function a(){const t=this;function e(t,e){let n=0;do{n|=1&t,t>>>=1,n<<=1}while(--e>0);return n>>>1}t.ht=r=>{const i=t.dt,s=t.bt.yt,o=t.bt.kt;let f,c,a,l=-1;for(r.gt=0,r.vt=573,f=0;o>f;f++)0!==i[2*f]?(r.St[++r.gt]=l=f,r.zt[f]=0):i[2*f+1]=0;for(;2>r.gt;)a=r.St[++r.gt]=2>l?++l:0,i[2*a]=1,r.zt[a]=0,r._t--,s&&(r.Ct-=s[2*a+1]);for(t.It=l,f=n.floor(r.gt/2);f>=1;f--)r.At(i,f);a=o;do{f=r.St[1],r.St[1]=r.St[r.gt--],r.At(i,1),c=r.St[1],r.St[--r.vt]=f,r.St[--r.vt]=c,i[2*a]=i[2*f]+i[2*c],r.zt[a]=n.max(r.zt[f],r.zt[c])+1,i[2*f+1]=i[2*c+1]=a,r.St[1]=a++,r.At(i,1)}while(r.gt>=2);r.St[--r.vt]=r.St[1],(e=>{const n=t.dt,r=t.bt.yt,i=t.bt.xt,s=t.bt.Vt,o=t.bt.Pt;let f,c,a,l,u,w,h=0;for(l=0;15>=l;l++)e.Bt[l]=0;for(n[2*e.St[e.vt]+1]=0,f=e.vt+1;573>f;f++)c=e.St[f],l=n[2*n[2*c+1]+1]+1,l>o&&(l=o,h++),n[2*c+1]=l,c>t.It||(e.Bt[l]++,u=0,s>c||(u=i[c-s]),w=n[2*c],e._t+=w*(l+u),r&&(e.Ct+=w*(r[2*c+1]+u)));if(0!==h){do{for(l=o-1;0===e.Bt[l];)l--;e.Bt[l]--,e.Bt[l+1]+=2,e.Bt[o]--,h-=2}while(h>0);for(l=o;0!==l;l--)for(c=e.Bt[l];0!==c;)a=e.St[--f],a>t.It||(n[2*a+1]!=l&&(e._t+=(l-n[2*a+1])*n[2*a],n[2*a+1]=l),c--)}})(r),((t,n,r)=>{const i=[];let s,o,f,c=0;for(s=1;15>=s;s++)i[s]=c=c+r[s-1]<<1;for(o=0;n>=o;o++)f=t[2*o+1],0!==f&&(t[2*o]=e(i[f]++,f))})(i,t.It,r.Bt)}}function l(t,e,n,r,i){const s=this;s.yt=t,s.xt=e,s.Vt=n,s.kt=r,s.Pt=i}a.Dt=[0,1,2,3,4,5,6,7].concat(...o([[2,8],[2,9],[2,10],[2,11],[4,12],[4,13],[4,14],[4,15],[8,16],[8,17],[8,18],[8,19],[16,20],[16,21],[16,22],[16,23],[32,24],[32,25],[32,26],[31,27],[1,28]])),a.Et=[0,1,2,3,4,5,6,7,8,10,12,14,16,20,24,28,32,40,48,56,64,80,96,112,128,160,192,224,0],a.Mt=[0,1,2,3,4,6,8,12,16,24,32,48,64,96,128,192,256,384,512,768,1024,1536,2048,3072,4096,6144,8192,12288,16384,24576],a.Rt=t=>256>t?c[t]:c[256+(t>>>7)],a.Ut=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0],a.Tt=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13],a.jt=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,7],a.Ht=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];const u=o([[144,8],[112,9],[24,7],[8,8]]);l.Kt=f([12,140,76,204,44,172,108,236,28,156,92,220,60,188,124,252,2,130,66,194,34,162,98,226,18,146,82,210,50,178,114,242,10,138,74,202,42,170,106,234,26,154,90,218,58,186,122,250,6,134,70,198,38,166,102,230,22,150,86,214,54,182,118,246,14,142,78,206,46,174,110,238,30,158,94,222,62,190,126,254,1,129,65,193,33,161,97,225,17,145,81,209,49,177,113,241,9,137,73,201,41,169,105,233,25,153,89,217,57,185,121,249,5,133,69,197,37,165,101,229,21,149,85,213,53,181,117,245,13,141,77,205,45,173,109,237,29,157,93,221,61,189,125,253,19,275,147,403,83,339,211,467,51,307,179,435,115,371,243,499,11,267,139,395,75,331,203,459,43,299,171,427,107,363,235,491,27,283,155,411,91,347,219,475,59,315,187,443,123,379,251,507,7,263,135,391,71,327,199,455,39,295,167,423,103,359,231,487,23,279,151,407,87,343,215,471,55,311,183,439,119,375,247,503,15,271,143,399,79,335,207,463,47,303,175,431,111,367,239,495,31,287,159,415,95,351,223,479,63,319,191,447,127,383,255,511,0,64,32,96,16,80,48,112,8,72,40,104,24,88,56,120,4,68,36,100,20,84,52,116,3,131,67,195,35,163,99,227].map(((t,e)=>[t,u[e]])));const w=o([[30,5]]);function h(t,e,n,r,i){const s=this;s.Lt=t,s.Wt=e,s.Ft=n,s.Ot=r,s.qt=i}l.Gt=f([0,16,8,24,4,20,12,28,2,18,10,26,6,22,14,30,1,17,9,25,5,21,13,29,3,19,11,27,7,23].map(((t,e)=>[t,w[e]]))),l.Jt=new l(l.Kt,a.Ut,257,286,15),l.Nt=new l(l.Gt,a.Tt,0,30,15),l.Qt=new l(null,a.jt,0,19,7);const d=[new h(0,0,0,0,0),new h(4,4,8,4,1),new h(4,5,16,8,1),new h(4,6,32,32,1),new h(4,4,16,16,2),new h(8,16,32,32,2),new h(8,16,128,128,2),new h(8,32,128,256,2),new h(32,128,258,1024,2),new h(32,258,258,4096,2)],p=["need dictionary","stream end","","","stream error","data error","","buffer error","",""],y=113,b=666,m=262;function k(t,e,n,r){const i=t[2*e],s=t[2*n];return s>i||i==s&&r[e]<=r[n]}function g(){const t=this;let r,o,f,c,u,w,h,g,v,S,z,_,C,I,A,x,V,P,B,D,E,M,R,U,T,j,H,K,L,W,F,O,q;const G=new a,J=new a,N=new a;let Q,X,Y,Z,$,tt;function et(){let e;for(e=0;286>e;e++)F[2*e]=0;for(e=0;30>e;e++)O[2*e]=0;for(e=0;19>e;e++)q[2*e]=0;F[512]=1,t._t=t.Ct=0,X=Y=0}function nt(t,e){let n,r=-1,i=t[1],s=0,o=7,f=4;0===i&&(o=138,f=3),t[2*(e+1)+1]=65535;for(let c=0;e>=c;c++)n=i,i=t[2*(c+1)+1],++s<o&&n==i||(f>s?q[2*n]+=s:0!==n?(n!=r&&q[2*n]++,q[32]++):s>10?q[36]++:q[34]++,s=0,r=n,0===i?(o=138,f=3):n==i?(o=6,f=3):(o=7,f=4))}function rt(e){t.Xt[t.pending++]=e}function it(t){rt(255&t),rt(t>>>8&255)}function st(t,e){let n;const r=e;tt>16-r?(n=t,$|=n<<tt&65535,it($),$=n>>>16-tt,tt+=r-16):($|=t<<tt&65535,tt+=r)}function ot(t,e){const n=2*t;st(65535&e[n],65535&e[n+1])}function ft(t,e){let n,r,i=-1,s=t[1],o=0,f=7,c=4;for(0===s&&(f=138,c=3),n=0;e>=n;n++)if(r=s,s=t[2*(n+1)+1],++o>=f||r!=s){if(c>o)do{ot(r,q)}while(0!=--o);else 0!==r?(r!=i&&(ot(r,q),o--),ot(16,q),st(o-3,2)):o>10?(ot(18,q),st(o-11,7)):(ot(17,q),st(o-3,3));o=0,i=r,0===s?(f=138,c=3):r==s?(f=6,c=3):(f=7,c=4)}}function ct(){16==tt?(it($),$=0,tt=0):8>tt||(rt(255&$),$>>>=8,tt-=8)}function at(e,r){let i,s,o;if(t.Yt[X]=e,t.Zt[X]=255&r,X++,0===e?F[2*r]++:(Y++,e--,F[2*(a.Dt[r]+256+1)]++,O[2*a.Rt(e)]++),0==(8191&X)&&H>2){for(i=8*X,s=E-V,o=0;30>o;o++)i+=O[2*o]*(5+a.Tt[o]);if(i>>>=3,Y<n.floor(X/2)&&i<n.floor(s/2))return!0}return X==Q-1}function lt(e,n){let r,i,s,o,f=0;if(0!==X)do{r=t.Yt[f],i=t.Zt[f],f++,0===r?ot(i,e):(s=a.Dt[i],ot(s+256+1,e),o=a.Ut[s],0!==o&&(i-=a.Et[s],st(i,o)),r--,s=a.Rt(r),ot(s,n),o=a.Tt[s],0!==o&&(r-=a.Mt[s],st(r,o)))}while(X>f);ot(256,e),Z=e[513]}function ut(){tt>8?it($):tt>0&&rt(255&$),$=0,tt=0}function wt(e,n,r){st(0+(r?1:0),3),((e,n)=>{ut(),Z=8,it(n),it(~n),t.Xt.set(g.subarray(e,e+n),t.pending),t.pending+=n})(e,n)}function ht(e){((e,n,r)=>{let i,s,o=0;H>0?(G.ht(t),J.ht(t),o=(()=>{let e;for(nt(F,G.It),nt(O,J.It),N.ht(t),e=18;e>=3&&0===q[2*a.Ht[e]+1];e--);return t._t+=14+3*(e+1),e})(),i=t._t+3+7>>>3,s=t.Ct+3+7>>>3,s>i||(i=s)):i=s=n+5,n+4>i||-1==e?s==i?(st(2+(r?1:0),3),lt(l.Kt,l.Gt)):(st(4+(r?1:0),3),((t,e,n)=>{let r;for(st(t-257,5),st(e-1,5),st(n-4,4),r=0;n>r;r++)st(q[2*a.Ht[r]+1],3);ft(F,t-1),ft(O,e-1)})(G.It+1,J.It+1,o+1),lt(F,O)):wt(e,n,r),et(),r&&ut()})(0>V?-1:V,E-V,e),V=E,r.$t()}function dt(){let t,e,n,i;do{if(i=v-R-E,0===i&&0===E&&0===R)i=u;else if(-1==i)i--;else if(E>=u+u-m){g.set(g.subarray(u,u+u),0),M-=u,E-=u,V-=u,t=C,n=t;do{e=65535&z[--n],z[n]=u>e?0:e-u}while(0!=--t);t=u,n=t;do{e=65535&S[--n],S[n]=u>e?0:e-u}while(0!=--t);i+=u}if(0===r.te)return;t=r.ee(g,E+R,i),R+=t,3>R||(_=255&g[E],_=(_<<x^255&g[E+1])&A)}while(m>R&&0!==r.te)}function pt(t){let e,n,r=T,i=E,s=U;const o=E>u-m?E-(u-m):0;let f=W;const c=h,a=E+258;let l=g[i+s-1],w=g[i+s];L>U||(r>>=2),f>R&&(f=R);do{if(e=t,g[e+s]==w&&g[e+s-1]==l&&g[e]==g[i]&&g[++e]==g[i+1]){i+=2,e++;do{}while(g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&g[++i]==g[++e]&&a>i);if(n=258-(a-i),i=a-258,n>s){if(M=t,s=n,n>=f)break;l=g[i+s-1],w=g[i+s]}}}while((t=65535&S[t&c])>o&&0!=--r);return s>R?R:s}t.zt=[],t.Bt=[],t.St=[],F=[],O=[],q=[],t.At=(e,n)=>{const r=t.St,i=r[n];let s=n<<1;for(;s<=t.gt&&(s<t.gt&&k(e,r[s+1],r[s],t.zt)&&s++,!k(e,i,r[s],t.zt));)r[n]=r[s],n=s,s<<=1;r[n]=i},t.ne=(r,a,p,b,m,k)=>(b||(b=8),m||(m=8),k||(k=0),r.re=null,-1==a&&(a=6),1>m||m>9||8!=b||9>p||p>15||0>a||a>9||0>k||k>2?e:(r.ie=t,w=p,u=1<<w,h=u-1,I=m+7,C=1<<I,A=C-1,x=n.floor((I+3-1)/3),g=new i(2*u),S=[],z=[],Q=1<<m+6,t.Xt=new i(4*Q),f=4*Q,t.Yt=new s(Q),t.Zt=new i(Q),H=a,K=k,(e=>(e.se=e.oe=0,e.re=null,t.pending=0,t.fe=0,o=y,c=0,G.dt=F,G.bt=l.Jt,J.dt=O,J.bt=l.Nt,N.dt=q,N.bt=l.Qt,$=0,tt=0,Z=8,et(),(()=>{v=2*u,z[C-1]=0;for(let t=0;C-1>t;t++)z[t]=0;j=d[H].Wt,L=d[H].Lt,W=d[H].Ft,T=d[H].Ot,E=0,V=0,R=0,P=U=2,D=0,_=0})(),0))(r))),t.ce=()=>42!=o&&o!=y&&o!=b?e:(t.Zt=null,t.Yt=null,t.Xt=null,z=null,S=null,g=null,t.ie=null,o==y?-3:0),t.ae=(t,n,r)=>{let i=0;return-1==n&&(n=6),0>n||n>9||0>r||r>2?e:(d[H].qt!=d[n].qt&&0!==t.se&&(i=t.le(1)),H!=n&&(H=n,j=d[H].Wt,L=d[H].Lt,W=d[H].Ft,T=d[H].Ot),K=r,i)},t.ue=(t,n,r)=>{let i,s=r,f=0;if(!n||42!=o)return e;if(3>s)return 0;for(s>u-m&&(s=u-m,f=r-s),g.set(n.subarray(f,f+s),0),E=s,V=s,_=255&g[0],_=(_<<x^255&g[1])&A,i=0;s-3>=i;i++)_=(_<<x^255&g[i+2])&A,S[i&h]=z[_],z[_]=i;return 0},t.le=(n,i)=>{let s,a,k,v,I;if(i>4||0>i)return e;if(!n.we||!n.he&&0!==n.te||o==b&&4!=i)return n.re=p[4],e;if(0===n.de)return n.re=p[7],-5;var T;if(r=n,v=c,c=i,42==o&&(a=8+(w-8<<4)<<8,k=(H-1&255)>>1,k>3&&(k=3),a|=k<<6,0!==E&&(a|=32),a+=31-a%31,o=y,rt((T=a)>>8&255),rt(255&T)),0!==t.pending){if(r.$t(),0===r.de)return c=-1,0}else if(0===r.te&&v>=i&&4!=i)return r.re=p[7],-5;if(o==b&&0!==r.te)return n.re=p[7],-5;if(0!==r.te||0!==R||0!=i&&o!=b){switch(I=-1,d[H].qt){case 0:I=(t=>{let e,n=65535;for(n>f-5&&(n=f-5);;){if(1>=R){if(dt(),0===R&&0==t)return 0;if(0===R)break}if(E+=R,R=0,e=V+n,(0===E||E>=e)&&(R=E-e,E=e,ht(!1),0===r.de))return 0;if(E-V>=u-m&&(ht(!1),0===r.de))return 0}return ht(4==t),0===r.de?4==t?2:0:4==t?3:1})(i);break;case 1:I=(t=>{let e,n=0;for(;;){if(m>R){if(dt(),m>R&&0==t)return 0;if(0===R)break}if(3>R||(_=(_<<x^255&g[E+2])&A,n=65535&z[_],S[E&h]=z[_],z[_]=E),0===n||(E-n&65535)>u-m||2!=K&&(P=pt(n)),3>P)e=at(0,255&g[E]),R--,E++;else if(e=at(E-M,P-3),R-=P,P>j||3>R)E+=P,P=0,_=255&g[E],_=(_<<x^255&g[E+1])&A;else{P--;do{E++,_=(_<<x^255&g[E+2])&A,n=65535&z[_],S[E&h]=z[_],z[_]=E}while(0!=--P);E++}if(e&&(ht(!1),0===r.de))return 0}return ht(4==t),0===r.de?4==t?2:0:4==t?3:1})(i);break;case 2:I=(t=>{let e,n,i=0;for(;;){if(m>R){if(dt(),m>R&&0==t)return 0;if(0===R)break}if(3>R||(_=(_<<x^255&g[E+2])&A,i=65535&z[_],S[E&h]=z[_],z[_]=E),U=P,B=M,P=2,0!==i&&j>U&&u-m>=(E-i&65535)&&(2!=K&&(P=pt(i)),5>=P&&(1==K||3==P&&E-M>4096)&&(P=2)),3>U||P>U)if(0!==D){if(e=at(0,255&g[E-1]),e&&ht(!1),E++,R--,0===r.de)return 0}else D=1,E++,R--;else{n=E+R-3,e=at(E-1-B,U-3),R-=U-1,U-=2;do{++E>n||(_=(_<<x^255&g[E+2])&A,i=65535&z[_],S[E&h]=z[_],z[_]=E)}while(0!=--U);if(D=0,P=2,E++,e&&(ht(!1),0===r.de))return 0}}return 0!==D&&(e=at(0,255&g[E-1]),D=0),ht(4==t),0===r.de?4==t?2:0:4==t?3:1})(i)}if(2!=I&&3!=I||(o=b),0==I||2==I)return 0===r.de&&(c=-1),0;if(1==I){if(1==i)st(2,3),ot(256,l.Kt),ct(),9>1+Z+10-tt&&(st(2,3),ot(256,l.Kt),ct()),Z=7;else if(wt(0,0,!1),3==i)for(s=0;C>s;s++)z[s]=0;if(r.$t(),0===r.de)return c=-1,0}}return 4!=i?0:1}}function v(){const t=this;t.pe=0,t.ye=0,t.te=0,t.se=0,t.de=0,t.oe=0}return v.prototype={ne:function(t,e){const n=this;return n.ie=new g,e||(e=15),n.ie.ne(n,t,e)},le:function(t){const n=this;return n.ie?n.ie.le(n,t):e},ce:function(){const t=this;if(!t.ie)return e;const n=t.ie.ce();return t.ie=null,n},ae:function(t,n){const r=this;return r.ie?r.ie.ae(r,t,n):e},ue:function(t,n){const r=this;return r.ie?r.ie.ue(r,t,n):e},ee:function(t,e,n){const r=this;let i=r.te;return i>n&&(i=n),0===i?0:(r.te-=i,t.set(r.he.subarray(r.pe,r.pe+i),e),r.pe+=i,r.se+=i,i)},$t:function(){const t=this;let e=t.ie.pending;e>t.de&&(e=t.de),0!==e&&(t.we.set(t.ie.Xt.subarray(t.ie.fe,t.ie.fe+e),t.ye),t.ye+=e,t.ie.fe+=e,t.oe+=e,t.de-=e,t.ie.pending-=e,0===t.ie.pending&&(t.ie.fe=0))}},function(t){const e=new v,s=(o=t&&t.ot?t.ot:65536)+5*(n.floor(o/16383)+1);var o;const f=new i(s);let c=t?t.level:-1;void 0===c&&(c=-1),e.ne(c),e.we=f,this.append=(t,n)=>{let o,c,a=0,l=0,u=0;const w=[];if(t.length){e.pe=0,e.he=t,e.te=t.length;do{if(e.ye=0,e.de=s,o=e.le(0),0!=o)throw new r("deflating: "+e.re);e.ye&&(e.ye==s?w.push(new i(f)):w.push(f.slice(0,e.ye))),u+=e.ye,n&&e.pe>0&&e.pe!=a&&(n(e.pe),a=e.pe)}while(e.te>0||0===e.de);return w.length>1?(c=new i(u),w.forEach((t=>{c.set(t,l),l+=t.length}))):c=w[0]||new i(0),c}},this.flush=()=>{let t,n,o=0,c=0;const a=[];do{if(e.ye=0,e.de=s,t=e.le(4),1!=t&&0!=t)throw new r("deflating: "+e.re);s-e.de>0&&a.push(f.slice(0,e.ye)),c+=e.ye}while(e.te>0||0===e.de);return e.ce(),n=new i(c),a.forEach((t=>{n.set(t,o),o+=t.length})),n}}})(),ht=(()=>{const t=-2,e=-3,s=-5,o=[0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535],c=[96,7,256,0,8,80,0,8,16,84,8,115,82,7,31,0,8,112,0,8,48,0,9,192,80,7,10,0,8,96,0,8,32,0,9,160,0,8,0,0,8,128,0,8,64,0,9,224,80,7,6,0,8,88,0,8,24,0,9,144,83,7,59,0,8,120,0,8,56,0,9,208,81,7,17,0,8,104,0,8,40,0,9,176,0,8,8,0,8,136,0,8,72,0,9,240,80,7,4,0,8,84,0,8,20,85,8,227,83,7,43,0,8,116,0,8,52,0,9,200,81,7,13,0,8,100,0,8,36,0,9,168,0,8,4,0,8,132,0,8,68,0,9,232,80,7,8,0,8,92,0,8,28,0,9,152,84,7,83,0,8,124,0,8,60,0,9,216,82,7,23,0,8,108,0,8,44,0,9,184,0,8,12,0,8,140,0,8,76,0,9,248,80,7,3,0,8,82,0,8,18,85,8,163,83,7,35,0,8,114,0,8,50,0,9,196,81,7,11,0,8,98,0,8,34,0,9,164,0,8,2,0,8,130,0,8,66,0,9,228,80,7,7,0,8,90,0,8,26,0,9,148,84,7,67,0,8,122,0,8,58,0,9,212,82,7,19,0,8,106,0,8,42,0,9,180,0,8,10,0,8,138,0,8,74,0,9,244,80,7,5,0,8,86,0,8,22,192,8,0,83,7,51,0,8,118,0,8,54,0,9,204,81,7,15,0,8,102,0,8,38,0,9,172,0,8,6,0,8,134,0,8,70,0,9,236,80,7,9,0,8,94,0,8,30,0,9,156,84,7,99,0,8,126,0,8,62,0,9,220,82,7,27,0,8,110,0,8,46,0,9,188,0,8,14,0,8,142,0,8,78,0,9,252,96,7,256,0,8,81,0,8,17,85,8,131,82,7,31,0,8,113,0,8,49,0,9,194,80,7,10,0,8,97,0,8,33,0,9,162,0,8,1,0,8,129,0,8,65,0,9,226,80,7,6,0,8,89,0,8,25,0,9,146,83,7,59,0,8,121,0,8,57,0,9,210,81,7,17,0,8,105,0,8,41,0,9,178,0,8,9,0,8,137,0,8,73,0,9,242,80,7,4,0,8,85,0,8,21,80,8,258,83,7,43,0,8,117,0,8,53,0,9,202,81,7,13,0,8,101,0,8,37,0,9,170,0,8,5,0,8,133,0,8,69,0,9,234,80,7,8,0,8,93,0,8,29,0,9,154,84,7,83,0,8,125,0,8,61,0,9,218,82,7,23,0,8,109,0,8,45,0,9,186,0,8,13,0,8,141,0,8,77,0,9,250,80,7,3,0,8,83,0,8,19,85,8,195,83,7,35,0,8,115,0,8,51,0,9,198,81,7,11,0,8,99,0,8,35,0,9,166,0,8,3,0,8,131,0,8,67,0,9,230,80,7,7,0,8,91,0,8,27,0,9,150,84,7,67,0,8,123,0,8,59,0,9,214,82,7,19,0,8,107,0,8,43,0,9,182,0,8,11,0,8,139,0,8,75,0,9,246,80,7,5,0,8,87,0,8,23,192,8,0,83,7,51,0,8,119,0,8,55,0,9,206,81,7,15,0,8,103,0,8,39,0,9,174,0,8,7,0,8,135,0,8,71,0,9,238,80,7,9,0,8,95,0,8,31,0,9,158,84,7,99,0,8,127,0,8,63,0,9,222,82,7,27,0,8,111,0,8,47,0,9,190,0,8,15,0,8,143,0,8,79,0,9,254,96,7,256,0,8,80,0,8,16,84,8,115,82,7,31,0,8,112,0,8,48,0,9,193,80,7,10,0,8,96,0,8,32,0,9,161,0,8,0,0,8,128,0,8,64,0,9,225,80,7,6,0,8,88,0,8,24,0,9,145,83,7,59,0,8,120,0,8,56,0,9,209,81,7,17,0,8,104,0,8,40,0,9,177,0,8,8,0,8,136,0,8,72,0,9,241,80,7,4,0,8,84,0,8,20,85,8,227,83,7,43,0,8,116,0,8,52,0,9,201,81,7,13,0,8,100,0,8,36,0,9,169,0,8,4,0,8,132,0,8,68,0,9,233,80,7,8,0,8,92,0,8,28,0,9,153,84,7,83,0,8,124,0,8,60,0,9,217,82,7,23,0,8,108,0,8,44,0,9,185,0,8,12,0,8,140,0,8,76,0,9,249,80,7,3,0,8,82,0,8,18,85,8,163,83,7,35,0,8,114,0,8,50,0,9,197,81,7,11,0,8,98,0,8,34,0,9,165,0,8,2,0,8,130,0,8,66,0,9,229,80,7,7,0,8,90,0,8,26,0,9,149,84,7,67,0,8,122,0,8,58,0,9,213,82,7,19,0,8,106,0,8,42,0,9,181,0,8,10,0,8,138,0,8,74,0,9,245,80,7,5,0,8,86,0,8,22,192,8,0,83,7,51,0,8,118,0,8,54,0,9,205,81,7,15,0,8,102,0,8,38,0,9,173,0,8,6,0,8,134,0,8,70,0,9,237,80,7,9,0,8,94,0,8,30,0,9,157,84,7,99,0,8,126,0,8,62,0,9,221,82,7,27,0,8,110,0,8,46,0,9,189,0,8,14,0,8,142,0,8,78,0,9,253,96,7,256,0,8,81,0,8,17,85,8,131,82,7,31,0,8,113,0,8,49,0,9,195,80,7,10,0,8,97,0,8,33,0,9,163,0,8,1,0,8,129,0,8,65,0,9,227,80,7,6,0,8,89,0,8,25,0,9,147,83,7,59,0,8,121,0,8,57,0,9,211,81,7,17,0,8,105,0,8,41,0,9,179,0,8,9,0,8,137,0,8,73,0,9,243,80,7,4,0,8,85,0,8,21,80,8,258,83,7,43,0,8,117,0,8,53,0,9,203,81,7,13,0,8,101,0,8,37,0,9,171,0,8,5,0,8,133,0,8,69,0,9,235,80,7,8,0,8,93,0,8,29,0,9,155,84,7,83,0,8,125,0,8,61,0,9,219,82,7,23,0,8,109,0,8,45,0,9,187,0,8,13,0,8,141,0,8,77,0,9,251,80,7,3,0,8,83,0,8,19,85,8,195,83,7,35,0,8,115,0,8,51,0,9,199,81,7,11,0,8,99,0,8,35,0,9,167,0,8,3,0,8,131,0,8,67,0,9,231,80,7,7,0,8,91,0,8,27,0,9,151,84,7,67,0,8,123,0,8,59,0,9,215,82,7,19,0,8,107,0,8,43,0,9,183,0,8,11,0,8,139,0,8,75,0,9,247,80,7,5,0,8,87,0,8,23,192,8,0,83,7,51,0,8,119,0,8,55,0,9,207,81,7,15,0,8,103,0,8,39,0,9,175,0,8,7,0,8,135,0,8,71,0,9,239,80,7,9,0,8,95,0,8,31,0,9,159,84,7,99,0,8,127,0,8,63,0,9,223,82,7,27,0,8,111,0,8,47,0,9,191,0,8,15,0,8,143,0,8,79,0,9,255],a=[80,5,1,87,5,257,83,5,17,91,5,4097,81,5,5,89,5,1025,85,5,65,93,5,16385,80,5,3,88,5,513,84,5,33,92,5,8193,82,5,9,90,5,2049,86,5,129,192,5,24577,80,5,2,87,5,385,83,5,25,91,5,6145,81,5,7,89,5,1537,85,5,97,93,5,24577,80,5,4,88,5,769,84,5,49,92,5,12289,82,5,13,90,5,3073,86,5,193,192,5,24577],l=[3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258,0,0],u=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0,112,112],w=[1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577],h=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];function d(){let t,n,r,i,o,c;function a(t,n,f,a,l,u,w,h,d,p,y){let b,m,k,g,v,S,z,_,C,I,A,x,V,P,B;I=0,v=f;do{r[t[n+I]]++,I++,v--}while(0!==v);if(r[0]==f)return w[0]=-1,h[0]=0,0;for(_=h[0],S=1;15>=S&&0===r[S];S++);for(z=S,S>_&&(_=S),v=15;0!==v&&0===r[v];v--);for(k=v,_>v&&(_=v),h[0]=_,P=1<<S;v>S;S++,P<<=1)if(0>(P-=r[S]))return e;if(0>(P-=r[v]))return e;for(r[v]+=P,c[1]=S=0,I=1,V=2;0!=--v;)c[V]=S+=r[I],V++,I++;v=0,I=0;do{0!==(S=t[n+I])&&(y[c[S]++]=v),I++}while(++v<f);for(f=c[k],c[0]=v=0,I=0,g=-1,x=-_,o[0]=0,A=0,B=0;k>=z;z++)for(b=r[z];0!=b--;){for(;z>x+_;){if(g++,x+=_,B=k-x,B=B>_?_:B,(m=1<<(S=z-x))>b+1&&(m-=b+1,V=z,B>S))for(;++S<B&&(m<<=1)>r[++V];)m-=r[V];if(B=1<<S,p[0]+B>1440)return e;o[g]=A=p[0],p[0]+=B,0!==g?(c[g]=v,i[0]=S,i[1]=_,S=v>>>x-_,i[2]=A-o[g-1]-S,d.set(i,3*(o[g-1]+S))):w[0]=A}for(i[1]=z-x,f>I?y[I]<a?(i[0]=256>y[I]?0:96,i[2]=y[I++]):(i[0]=u[y[I]-a]+16+64,i[2]=l[y[I++]-a]):i[0]=192,m=1<<z-x,S=v>>>x;B>S;S+=m)d.set(i,3*(A+S));for(S=1<<z-1;0!=(v&S);S>>>=1)v^=S;for(v^=S,C=(1<<x)-1;(v&C)!=c[g];)g--,x-=_,C=(1<<x)-1}return 0!==P&&1!=k?s:0}function d(e){let s;for(t||(t=[],n=[],r=new f(16),i=[],o=new f(15),c=new f(16)),n.length<e&&(n=[]),s=0;e>s;s++)n[s]=0;for(s=0;16>s;s++)r[s]=0;for(s=0;3>s;s++)i[s]=0;o.set(r.subarray(0,15),0),c.set(r.subarray(0,16),0)}this.be=(r,i,o,f,c)=>{let l;return d(19),t[0]=0,l=a(r,0,19,19,null,null,o,i,f,t,n),l==e?c.re="oversubscribed dynamic bit lengths tree":l!=s&&0!==i[0]||(c.re="incomplete dynamic bit lengths tree",l=e),l},this.me=(r,i,o,f,c,p,y,b,m)=>{let k;return d(288),t[0]=0,k=a(o,0,r,257,l,u,p,f,b,t,n),0!=k||0===f[0]?(k==e?m.re="oversubscribed literal/length tree":-4!=k&&(m.re="incomplete literal/length tree",k=e),k):(d(288),k=a(o,r,i,0,w,h,y,c,b,t,n),0!=k||0===c[0]&&r>257?(k==e?m.re="oversubscribed distance tree":k==s?(m.re="incomplete distance tree",k=e):-4!=k&&(m.re="empty distance tree with lengths",k=e),k):0)}}function p(){const n=this;let r,i,s,f,c=0,a=0,l=0,u=0,w=0,h=0,d=0,p=0,y=0,b=0;function m(t,n,r,i,s,f,c,a){let l,u,w,h,d,p,y,b,m,k,g,v,S,z,_,C;y=a.pe,b=a.te,d=c.ke,p=c.ge,m=c.write,k=m<c.read?c.read-m-1:c.end-m,g=o[t],v=o[n];do{for(;20>p;)b--,d|=(255&a.ve(y++))<<p,p+=8;if(l=d&g,u=r,w=i,C=3*(w+l),0!==(h=u[C]))for(;;){if(d>>=u[C+1],p-=u[C+1],0!=(16&h)){for(h&=15,S=u[C+2]+(d&o[h]),d>>=h,p-=h;15>p;)b--,d|=(255&a.ve(y++))<<p,p+=8;for(l=d&v,u=s,w=f,C=3*(w+l),h=u[C];;){if(d>>=u[C+1],p-=u[C+1],0!=(16&h)){for(h&=15;h>p;)b--,d|=(255&a.ve(y++))<<p,p+=8;if(z=u[C+2]+(d&o[h]),d>>=h,p-=h,k-=S,z>m){_=m-z;do{_+=c.end}while(0>_);if(h=c.end-_,S>h){if(S-=h,m-_>0&&h>m-_)do{c.Se[m++]=c.Se[_++]}while(0!=--h);else c.Se.set(c.Se.subarray(_,_+h),m),m+=h,_+=h,h=0;_=0}}else _=m-z,m-_>0&&2>m-_?(c.Se[m++]=c.Se[_++],c.Se[m++]=c.Se[_++],S-=2):(c.Se.set(c.Se.subarray(_,_+2),m),m+=2,_+=2,S-=2);if(m-_>0&&S>m-_)do{c.Se[m++]=c.Se[_++]}while(0!=--S);else c.Se.set(c.Se.subarray(_,_+S),m),m+=S,_+=S,S=0;break}if(0!=(64&h))return a.re="invalid distance code",S=a.te-b,S=S>p>>3?p>>3:S,b+=S,y-=S,p-=S<<3,c.ke=d,c.ge=p,a.te=b,a.se+=y-a.pe,a.pe=y,c.write=m,e;l+=u[C+2],l+=d&o[h],C=3*(w+l),h=u[C]}break}if(0!=(64&h))return 0!=(32&h)?(S=a.te-b,S=S>p>>3?p>>3:S,b+=S,y-=S,p-=S<<3,c.ke=d,c.ge=p,a.te=b,a.se+=y-a.pe,a.pe=y,c.write=m,1):(a.re="invalid literal/length code",S=a.te-b,S=S>p>>3?p>>3:S,b+=S,y-=S,p-=S<<3,c.ke=d,c.ge=p,a.te=b,a.se+=y-a.pe,a.pe=y,c.write=m,e);if(l+=u[C+2],l+=d&o[h],C=3*(w+l),0===(h=u[C])){d>>=u[C+1],p-=u[C+1],c.Se[m++]=u[C+2],k--;break}}else d>>=u[C+1],p-=u[C+1],c.Se[m++]=u[C+2],k--}while(k>=258&&b>=10);return S=a.te-b,S=S>p>>3?p>>3:S,b+=S,y-=S,p-=S<<3,c.ke=d,c.ge=p,a.te=b,a.se+=y-a.pe,a.pe=y,c.write=m,0}n.init=(t,e,n,o,c,a)=>{r=0,d=t,p=e,s=n,y=o,f=c,b=a,i=null},n.ze=(n,k,g)=>{let v,S,z,_,C,I,A,x=0,V=0,P=0;for(P=k.pe,_=k.te,x=n.ke,V=n.ge,C=n.write,I=C<n.read?n.read-C-1:n.end-C;;)switch(r){case 0:if(I>=258&&_>=10&&(n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,g=m(d,p,s,y,f,b,n,k),P=k.pe,_=k.te,x=n.ke,V=n.ge,C=n.write,I=C<n.read?n.read-C-1:n.end-C,0!=g)){r=1==g?7:9;break}l=d,i=s,a=y,r=1;case 1:for(v=l;v>V;){if(0===_)return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);g=0,_--,x|=(255&k.ve(P++))<<V,V+=8}if(S=3*(a+(x&o[v])),x>>>=i[S+1],V-=i[S+1],z=i[S],0===z){u=i[S+2],r=6;break}if(0!=(16&z)){w=15&z,c=i[S+2],r=2;break}if(0==(64&z)){l=z,a=S/3+i[S+2];break}if(0!=(32&z)){r=7;break}return r=9,k.re="invalid literal/length code",g=e,n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);case 2:for(v=w;v>V;){if(0===_)return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);g=0,_--,x|=(255&k.ve(P++))<<V,V+=8}c+=x&o[v],x>>=v,V-=v,l=p,i=f,a=b,r=3;case 3:for(v=l;v>V;){if(0===_)return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);g=0,_--,x|=(255&k.ve(P++))<<V,V+=8}if(S=3*(a+(x&o[v])),x>>=i[S+1],V-=i[S+1],z=i[S],0!=(16&z)){w=15&z,h=i[S+2],r=4;break}if(0==(64&z)){l=z,a=S/3+i[S+2];break}return r=9,k.re="invalid distance code",g=e,n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);case 4:for(v=w;v>V;){if(0===_)return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);g=0,_--,x|=(255&k.ve(P++))<<V,V+=8}h+=x&o[v],x>>=v,V-=v,r=5;case 5:for(A=C-h;0>A;)A+=n.end;for(;0!==c;){if(0===I&&(C==n.end&&0!==n.read&&(C=0,I=C<n.read?n.read-C-1:n.end-C),0===I&&(n.write=C,g=n._e(k,g),C=n.write,I=C<n.read?n.read-C-1:n.end-C,C==n.end&&0!==n.read&&(C=0,I=C<n.read?n.read-C-1:n.end-C),0===I)))return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);n.Se[C++]=n.Se[A++],I--,A==n.end&&(A=0),c--}r=0;break;case 6:if(0===I&&(C==n.end&&0!==n.read&&(C=0,I=C<n.read?n.read-C-1:n.end-C),0===I&&(n.write=C,g=n._e(k,g),C=n.write,I=C<n.read?n.read-C-1:n.end-C,C==n.end&&0!==n.read&&(C=0,I=C<n.read?n.read-C-1:n.end-C),0===I)))return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);g=0,n.Se[C++]=u,I--,r=0;break;case 7:if(V>7&&(V-=8,_++,P--),n.write=C,g=n._e(k,g),C=n.write,I=C<n.read?n.read-C-1:n.end-C,n.read!=n.write)return n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);r=8;case 8:return g=1,n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);case 9:return g=e,n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g);default:return g=t,n.ke=x,n.ge=V,k.te=_,k.se+=P-k.pe,k.pe=P,n.write=C,n._e(k,g)}},n.Ce=()=>{}}d.Ie=(t,e,n,r)=>(t[0]=9,e[0]=5,n[0]=c,r[0]=a,0);const y=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];function b(n,r){const c=this;let a,l=0,u=0,w=0,h=0;const b=[0],m=[0],k=new p;let g=0,v=new f(4320);const S=new d;c.ge=0,c.ke=0,c.Se=new i(r),c.end=r,c.read=0,c.write=0,c.reset=(t,e)=>{e&&(e[0]=0),6==l&&k.Ce(t),l=0,c.ge=0,c.ke=0,c.read=c.write=0},c.reset(n,null),c._e=(t,e)=>{let n,r,i;return r=t.ye,i=c.read,n=(i>c.write?c.end:c.write)-i,n>t.de&&(n=t.de),0!==n&&e==s&&(e=0),t.de-=n,t.oe+=n,t.we.set(c.Se.subarray(i,i+n),r),r+=n,i+=n,i==c.end&&(i=0,c.write==c.end&&(c.write=0),n=c.write-i,n>t.de&&(n=t.de),0!==n&&e==s&&(e=0),t.de-=n,t.oe+=n,t.we.set(c.Se.subarray(i,i+n),r),r+=n,i+=n),t.ye=r,c.read=i,e},c.ze=(n,r)=>{let i,s,f,p,z,_,C,I;for(p=n.pe,z=n.te,s=c.ke,f=c.ge,_=c.write,C=_<c.read?c.read-_-1:c.end-_;;){let A,x,V,P,B,D,E,M;switch(l){case 0:for(;3>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}switch(i=7&s,g=1&i,i>>>1){case 0:s>>>=3,f-=3,i=7&f,s>>>=i,f-=i,l=1;break;case 1:A=[],x=[],V=[[]],P=[[]],d.Ie(A,x,V,P),k.init(A[0],x[0],V[0],0,P[0],0),s>>>=3,f-=3,l=6;break;case 2:s>>>=3,f-=3,l=3;break;case 3:return s>>>=3,f-=3,l=9,n.re="invalid block type",r=e,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r)}break;case 1:for(;32>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}if((~s>>>16&65535)!=(65535&s))return l=9,n.re="invalid stored block lengths",r=e,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);u=65535&s,s=f=0,l=0!==u?2:0!==g?7:0;break;case 2:if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);if(0===C&&(_==c.end&&0!==c.read&&(_=0,C=_<c.read?c.read-_-1:c.end-_),0===C&&(c.write=_,r=c._e(n,r),_=c.write,C=_<c.read?c.read-_-1:c.end-_,_==c.end&&0!==c.read&&(_=0,C=_<c.read?c.read-_-1:c.end-_),0===C)))return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);if(r=0,i=u,i>z&&(i=z),i>C&&(i=C),c.Se.set(n.ee(p,i),_),p+=i,z-=i,_+=i,C-=i,0!=(u-=i))break;l=0!==g?7:0;break;case 3:for(;14>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}if(w=i=16383&s,(31&i)>29||(i>>5&31)>29)return l=9,n.re="too many length or distance symbols",r=e,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);if(i=258+(31&i)+(i>>5&31),!a||a.length<i)a=[];else for(I=0;i>I;I++)a[I]=0;s>>>=14,f-=14,h=0,l=4;case 4:for(;4+(w>>>10)>h;){for(;3>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}a[y[h++]]=7&s,s>>>=3,f-=3}for(;19>h;)a[y[h++]]=0;if(b[0]=7,i=S.be(a,b,m,v,n),0!=i)return(r=i)==e&&(a=null,l=9),c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);h=0,l=5;case 5:for(;i=w,258+(31&i)+(i>>5&31)>h;){let t,u;for(i=b[0];i>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}if(i=v[3*(m[0]+(s&o[i]))+1],u=v[3*(m[0]+(s&o[i]))+2],16>u)s>>>=i,f-=i,a[h++]=u;else{for(I=18==u?7:u-14,t=18==u?11:3;i+I>f;){if(0===z)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);r=0,z--,s|=(255&n.ve(p++))<<f,f+=8}if(s>>>=i,f-=i,t+=s&o[I],s>>>=I,f-=I,I=h,i=w,I+t>258+(31&i)+(i>>5&31)||16==u&&1>I)return a=null,l=9,n.re="invalid bit length repeat",r=e,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);u=16==u?a[I-1]:0;do{a[I++]=u}while(0!=--t);h=I}}if(m[0]=-1,B=[],D=[],E=[],M=[],B[0]=9,D[0]=6,i=w,i=S.me(257+(31&i),1+(i>>5&31),a,B,D,E,M,v,n),0!=i)return i==e&&(a=null,l=9),r=i,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);k.init(B[0],D[0],v,E[0],v,M[0]),l=6;case 6:if(c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,1!=(r=k.ze(c,n,r)))return c._e(n,r);if(r=0,k.Ce(n),p=n.pe,z=n.te,s=c.ke,f=c.ge,_=c.write,C=_<c.read?c.read-_-1:c.end-_,0===g){l=0;break}l=7;case 7:if(c.write=_,r=c._e(n,r),_=c.write,C=_<c.read?c.read-_-1:c.end-_,c.read!=c.write)return c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);l=8;case 8:return r=1,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);case 9:return r=e,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r);default:return r=t,c.ke=s,c.ge=f,n.te=z,n.se+=p-n.pe,n.pe=p,c.write=_,c._e(n,r)}}},c.Ce=t=>{c.reset(t,null),c.Se=null,v=null},c.Ae=(t,e,n)=>{c.Se.set(t.subarray(e,e+n),0),c.read=c.write=n},c.xe=()=>1==l?1:0}const m=13,k=[0,0,255,255];function g(){const n=this;function r(e){return e&&e.Ve?(e.se=e.oe=0,e.re=null,e.Ve.mode=7,e.Ve.Pe.reset(e,null),0):t}n.mode=0,n.method=0,n.Be=[0],n.De=0,n.marker=0,n.Ee=0,n.Me=t=>(n.Pe&&n.Pe.Ce(t),n.Pe=null,0),n.Re=(e,i)=>(e.re=null,n.Pe=null,8>i||i>15?(n.Me(e),t):(n.Ee=i,e.Ve.Pe=new b(e,1<<i),r(e),0)),n.Ue=(n,r)=>{let i,o;if(!n||!n.Ve||!n.he)return t;const f=n.Ve;for(r=4==r?s:0,i=s;;)switch(f.mode){case 0:if(0===n.te)return i;if(i=r,n.te--,n.se++,8!=(15&(f.method=n.ve(n.pe++)))){f.mode=m,n.re="unknown compression method",f.marker=5;break}if(8+(f.method>>4)>f.Ee){f.mode=m,n.re="invalid win size",f.marker=5;break}f.mode=1;case 1:if(0===n.te)return i;if(i=r,n.te--,n.se++,o=255&n.ve(n.pe++),((f.method<<8)+o)%31!=0){f.mode=m,n.re="incorrect header check",f.marker=5;break}if(0==(32&o)){f.mode=7;break}f.mode=2;case 2:if(0===n.te)return i;i=r,n.te--,n.se++,f.De=(255&n.ve(n.pe++))<<24&4278190080,f.mode=3;case 3:if(0===n.te)return i;i=r,n.te--,n.se++,f.De+=(255&n.ve(n.pe++))<<16&16711680,f.mode=4;case 4:if(0===n.te)return i;i=r,n.te--,n.se++,f.De+=(255&n.ve(n.pe++))<<8&65280,f.mode=5;case 5:return 0===n.te?i:(i=r,n.te--,n.se++,f.De+=255&n.ve(n.pe++),f.mode=6,2);case 6:return f.mode=m,n.re="need dictionary",f.marker=0,t;case 7:if(i=f.Pe.ze(n,i),i==e){f.mode=m,f.marker=0;break}if(0==i&&(i=r),1!=i)return i;i=r,f.Pe.reset(n,f.Be),f.mode=12;case 12:return n.te=0,1;case m:return e;default:return t}},n.Te=(e,n,r)=>{let i=0,s=r;if(!e||!e.Ve||6!=e.Ve.mode)return t;const o=e.Ve;return s<1<<o.Ee||(s=(1<<o.Ee)-1,i=r-s),o.Pe.Ae(n,i,s),o.mode=7,0},n.je=n=>{let i,o,f,c,a;if(!n||!n.Ve)return t;const l=n.Ve;if(l.mode!=m&&(l.mode=m,l.marker=0),0===(i=n.te))return s;for(o=n.pe,f=l.marker;0!==i&&4>f;)n.ve(o)==k[f]?f++:f=0!==n.ve(o)?0:4-f,o++,i--;return n.se+=o-n.pe,n.pe=o,n.te=i,l.marker=f,4!=f?e:(c=n.se,a=n.oe,r(n),n.se=c,n.oe=a,l.mode=7,0)},n.He=e=>e&&e.Ve&&e.Ve.Pe?e.Ve.Pe.xe():t}function v(){}return v.prototype={Re:function(t){const e=this;return e.Ve=new g,t||(t=15),e.Ve.Re(e,t)},Ue:function(e){const n=this;return n.Ve?n.Ve.Ue(n,e):t},Me:function(){const e=this;if(!e.Ve)return t;const n=e.Ve.Me(e);return e.Ve=null,n},je:function(){const e=this;return e.Ve?e.Ve.je(e):t},Te:function(e,n){const r=this;return r.Ve?r.Ve.Te(r,e,n):t},ve:function(t){return this.he[t]},ee:function(t,e){return this.he.subarray(t,t+e)}},function(t){const e=new v,o=t&&t.ot?n.floor(2*t.ot):131072,f=new i(o);let c=!1;e.Re(),e.we=f,this.append=(t,n)=>{const a=[];let l,u,w=0,h=0,d=0;if(0!==t.length){e.pe=0,e.he=t,e.te=t.length;do{if(e.ye=0,e.de=o,0!==e.te||c||(e.pe=0,c=!0),l=e.Ue(0),c&&l===s){if(0!==e.te)throw new r("inflating: bad input")}else if(0!==l&&1!==l)throw new r("inflating: "+e.re);if((c||1===l)&&e.te===t.length)throw new r("inflating: bad input");e.ye&&(e.ye===o?a.push(new i(f)):a.push(f.slice(0,e.ye))),d+=e.ye,n&&e.pe>0&&e.pe!=w&&(n(e.pe),w=e.pe)}while(e.te>0||0===e.de);return a.length>1?(u=new i(d),a.forEach((t=>{u.set(t,h),h+=t.length}))):u=a[0]||new i(0),u}},this.flush=()=>{e.Me()}}})();self.initCodec=()=>{self.Deflate=wt,self.Inflate=ht};\n'],{type:"text/javascript"}));e({workerScripts:{inflate:[t],deflate:[t]}})}};
+var t=t=>{if("function"==typeof URL.createObjectURL){const e=()=>URL.createObjectURL(new Blob(['const{Array:t,Object:e,Math:n,Error:r,Uint8Array:i,Uint16Array:o,Uint32Array:s,Int32Array:f,DataView:c,TextEncoder:l,crypto:u,postMessage:a}=globalThis,w=[];for(let t=0;256>t;t++){let e=t;for(let t=0;8>t;t++)1&e?e=e>>>1^3988292384:e>>>=1;w[t]=e}class h{constructor(t){this.t=t||-1}append(t){let e=0|this.t;for(let n=0,r=0|t.length;r>n;n++)e=e>>>8^w[255&(e^t[n])];this.t=e}get(){return~this.t}}const d={concat(t,e){if(0===t.length||0===e.length)return t.concat(e);const n=t[t.length-1],r=d.i(n);return 32===r?t.concat(e):d.o(e,r,0|n,t.slice(0,t.length-1))},l(t){const e=t.length;if(0===e)return 0;const n=t[e-1];return 32*(e-1)+d.i(n)},u(t,e){if(32*t.length<e)return t;const r=(t=t.slice(0,n.ceil(e/32))).length;return e&=31,r>0&&e&&(t[r-1]=d.h(e,t[r-1]&2147483648>>e-1,1)),t},h:(t,e,n)=>32===t?e:(n?0|e:e<<32-t)+1099511627776*t,i:t=>n.round(t/1099511627776)||32,o(t,e,n,r){for(void 0===r&&(r=[]);e>=32;e-=32)r.push(n),n=0;if(0===e)return r.concat(t);for(let i=0;i<t.length;i++)r.push(n|t[i]>>>e),n=t[i]<<32-e;const i=t.length?t[t.length-1]:0,o=d.i(i);return r.push(d.h(e+o&31,e+o>32?n:r.pop(),1)),r}},p={p:{k(t){const e=d.l(t)/8,n=new i(e);let r;for(let i=0;e>i;i++)0==(3&i)&&(r=t[i/4]),n[i]=r>>>24,r<<=8;return n},g(t){const e=[];let n,r=0;for(n=0;n<t.length;n++)r=r<<8|t[n],3==(3&n)&&(e.push(r),r=0);return 3&n&&e.push(d.h(8*(3&n),r)),e}}},y={v:function(t){t?(this.m=t.m.slice(0),this.S=t.S.slice(0),this._=t._):this.reset()}};y.v.prototype={blockSize:512,reset:function(){const t=this;return t.m=this.I.slice(0),t.S=[],t._=0,t},update:function(t){const e=this;"string"==typeof t&&(t=p.A.g(t));const n=e.S=d.concat(e.S,t),i=e._,o=e._=i+d.l(t);if(o>9007199254740991)throw new r("Cannot hash more than 2^53 - 1 bits");const f=new s(n);let c=0;for(let t=e.blockSize+i-(e.blockSize+i&e.blockSize-1);o>=t;t+=e.blockSize)e.C(f.subarray(16*c,16*(c+1))),c+=1;return n.splice(0,16*c),e},V:function(){const t=this;let e=t.S;const r=t.m;e=d.concat(e,[d.h(1,1)]);for(let t=e.length+2;15&t;t++)e.push(0);for(e.push(n.floor(t._/4294967296)),e.push(0|t._);e.length;)t.C(e.splice(0,16));return t.reset(),r},I:[1732584193,4023233417,2562383102,271733878,3285377520],B:[1518500249,1859775393,2400959708,3395469782],D:(t,e,n,r)=>t>19?t>39?t>59?t>79?void 0:e^n^r:e&n|e&r|n&r:e^n^r:e&n|~e&r,U:(t,e)=>e<<t|e>>>32-t,C:function(e){const r=this,i=r.m,o=t(80);for(let t=0;16>t;t++)o[t]=e[t];let s=i[0],f=i[1],c=i[2],l=i[3],u=i[4];for(let t=0;79>=t;t++){16>t||(o[t]=r.U(1,o[t-3]^o[t-8]^o[t-14]^o[t-16]));const e=r.U(5,s)+r.D(t,f,c,l)+u+o[t]+r.B[n.floor(t/20)]|0;u=l,l=c,c=r.U(30,f),f=s,s=e}i[0]=i[0]+s|0,i[1]=i[1]+f|0,i[2]=i[2]+c|0,i[3]=i[3]+l|0,i[4]=i[4]+u|0}};const b={getRandomValues(t){const e=new s(t.buffer),r=t=>{let e=987654321;const r=4294967295;return()=>(e=36969*(65535&e)+(e>>16)&r,(((e<<16)+(t=18e3*(65535&t)+(t>>16)&r)&r)/4294967296+.5)*(n.random()>.5?1:-1))};for(let i,o=0;o<t.length;o+=4){const t=r(4294967296*(i||n.random()));i=987654071*t(),e[o/4]=4294967296*t()|0}return t}},k={importKey:t=>new k.M(p.p.g(t)),P(t,e,n,i){if(n=n||1e4,0>i||0>n)throw new r("invalid params to pbkdf2");const o=1+(i>>5)<<2;let s,f,l,u,a;const w=new ArrayBuffer(o),h=new c(w);let y=0;const b=d;for(e=p.p.g(e),a=1;(o||1)>y;a++){for(s=f=t.encrypt(b.concat(e,[a])),l=1;n>l;l++)for(f=t.encrypt(f),u=0;u<f.length;u++)s[u]^=f[u];for(l=0;(o||1)>y&&l<s.length;l++)h.setInt32(y,s[l]),y+=4}return w.slice(0,i/8)},M:class{constructor(t){const e=this,n=e.R=y.v,r=[[],[]],i=n.prototype.blockSize/32;e.H=[new n,new n],t.length>i&&(t=n.hash(t));for(let e=0;i>e;e++)r[0][e]=909522486^t[e],r[1][e]=1549556828^t[e];e.H[0].update(r[0]),e.H[1].update(r[1]),e.K=new n(e.H[0])}reset(){const t=this;t.K=new t.R(t.H[0]),t.L=!1}update(t){this.L=!0,this.K.update(t)}digest(){const t=this,e=t.K.V(),n=new t.R(t.H[1]).update(e).V();return t.reset(),n}encrypt(t){if(this.L)throw new r("encrypt on already updated hmac called!");return this.update(t),this.digest(t)}}},g={name:"PBKDF2"},v=e.assign({hash:{name:"HMAC"}},g),m=e.assign({iterations:1e3,hash:{name:"SHA-1"}},g),S=["deriveBits"],z=[8,12,16],_=[16,24,32],I=[0,0,0,0],A=void 0!==u,C=A&&void 0!==u.subtle,V=p.p,B=class{constructor(t){const e=this;e.T=[[[],[],[],[],[]],[[],[],[],[],[]]],e.T[0][0][0]||e.j();const n=e.T[0][4],i=e.T[1],o=t.length;let s,f,c,l=1;if(4!==o&&6!==o&&8!==o)throw new r("invalid aes key size");for(e.B=[f=t.slice(0),c=[]],s=o;4*o+28>s;s++){let t=f[s-1];(s%o==0||8===o&&s%o==4)&&(t=n[t>>>24]<<24^n[t>>16&255]<<16^n[t>>8&255]<<8^n[255&t],s%o==0&&(t=t<<8^t>>>24^l<<24,l=l<<1^283*(l>>7))),f[s]=f[s-o]^t}for(let t=0;s;t++,s--){const e=f[3&t?s:s-4];c[t]=4>=s||4>t?e:i[0][n[e>>>24]]^i[1][n[e>>16&255]]^i[2][n[e>>8&255]]^i[3][n[255&e]]}}encrypt(t){return this.F(t,0)}decrypt(t){return this.F(t,1)}j(){const t=this.T[0],e=this.T[1],n=t[4],r=e[4],i=[],o=[];let s,f,c,l;for(let t=0;256>t;t++)o[(i[t]=t<<1^283*(t>>7))^t]=t;for(let u=s=0;!n[u];u^=f||1,s=o[s]||1){let o=s^s<<1^s<<2^s<<3^s<<4;o=o>>8^255&o^99,n[u]=o,r[o]=u,l=i[c=i[f=i[u]]];let a=16843009*l^65537*c^257*f^16843008*u,w=257*i[o]^16843008*o;for(let n=0;4>n;n++)t[n][u]=w=w<<24^w>>>8,e[n][o]=a=a<<24^a>>>8}for(let n=0;5>n;n++)t[n]=t[n].slice(0),e[n]=e[n].slice(0)}F(t,e){if(4!==t.length)throw new r("invalid aes block size");const n=this.B[e],i=n.length/4-2,o=[0,0,0,0],s=this.T[e],f=s[0],c=s[1],l=s[2],u=s[3],a=s[4];let w,h,d,p=t[0]^n[0],y=t[e?3:1]^n[1],b=t[2]^n[2],k=t[e?1:3]^n[3],g=4;for(let t=0;i>t;t++)w=f[p>>>24]^c[y>>16&255]^l[b>>8&255]^u[255&k]^n[g],h=f[y>>>24]^c[b>>16&255]^l[k>>8&255]^u[255&p]^n[g+1],d=f[b>>>24]^c[k>>16&255]^l[p>>8&255]^u[255&y]^n[g+2],k=f[k>>>24]^c[p>>16&255]^l[y>>8&255]^u[255&b]^n[g+3],g+=4,p=w,y=h,b=d;for(let t=0;4>t;t++)o[e?3&-t:t]=a[p>>>24]<<24^a[y>>16&255]<<16^a[b>>8&255]<<8^a[255&k]^n[g++],w=p,p=y,y=b,b=k,k=w;return o}},E=class{constructor(t,e){this.O=t,this.W=e,this.q=e}reset(){this.q=this.W}update(t){return this.G(this.O,t,this.q)}J(t){if(255==(t>>24&255)){let e=t>>16&255,n=t>>8&255,r=255&t;255===e?(e=0,255===n?(n=0,255===r?r=0:++r):++n):++e,t=0,t+=e<<16,t+=n<<8,t+=r}else t+=1<<24;return t}N(t){0===(t[0]=this.J(t[0]))&&(t[1]=this.J(t[1]))}G(t,e,n){let r;if(!(r=e.length))return[];const i=d.l(e);for(let i=0;r>i;i+=4){this.N(n);const r=t.encrypt(n);e[i]^=r[0],e[i+1]^=r[1],e[i+2]^=r[2],e[i+3]^=r[3]}return d.u(e,i)}},D=k.M;class U{constructor(t,n,r){e.assign(this,{password:t,signed:n,X:r-1,Y:new i(0)})}async append(e){const n=this;if(n.password){const i=K(e,0,z[n.X]+2);await(async(t,e,n)=>{await R(t,n,K(e,0,z[t.X]));const i=K(e,z[t.X]),o=t.keys.passwordVerification;if(o[0]!=i[0]||o[1]!=i[1])throw new r("Invalid pasword")})(n,i,n.password),n.password=null,n.Z=new E(new B(n.keys.key),t.from(I)),n.$=new D(n.keys.tt),e=K(e,z[n.X]+2)}return P(n,e,new i(e.length-10-(e.length-10)%16),0,10,!0)}flush(){const t=this,e=t.Y,n=K(e,0,e.length-10),r=K(e,e.length-10);let o=new i(0);if(n.length){const e=V.g(n);t.$.update(e);const r=t.Z.update(e);o=V.k(r)}let s=!0;if(t.signed){const e=K(V.k(t.$.digest()),0,10);for(let t=0;10>t;t++)e[t]!=r[t]&&(s=!1)}return{valid:s,data:o}}}class M{constructor(t,n){e.assign(this,{password:t,X:n-1,Y:new i(0)})}async append(e){const n=this;let r=new i(0);n.password&&(r=await(async(t,e)=>{const n=(r=new i(z[t.X]),A&&"function"==typeof u.getRandomValues?u.getRandomValues(r):b.getRandomValues(r));var r;return await R(t,e,n),H(n,t.keys.passwordVerification)})(n,n.password),n.password=null,n.Z=new E(new B(n.keys.key),t.from(I)),n.$=new D(n.keys.tt));const o=new i(r.length+e.length-e.length%16);return o.set(r,0),P(n,e,o,r.length,0)}flush(){const t=this;let e=new i(0);if(t.Y.length){const n=t.Z.update(V.g(t.Y));t.$.update(n),e=V.k(n)}const n=K(V.k(t.$.digest()),0,10);return{data:H(e,n),signature:n}}}function P(t,e,n,r,o,s){const f=e.length-o;let c;for(t.Y.length&&(e=H(t.Y,e),n=((t,e)=>{if(e&&e>t.length){const n=t;(t=new i(e)).set(n,0)}return t})(n,f-f%16)),c=0;f-16>=c;c+=16){const i=V.g(K(e,c,c+16));s&&t.$.update(i);const o=t.Z.update(i);s||t.$.update(o),n.set(V.k(o),c+r)}return t.Y=K(e,c),n}async function R(t,n,r){const o=(t=>{if(void 0===l){const e=new i((t=unescape(encodeURIComponent(t))).length);for(let n=0;n<e.length;n++)e[n]=t.charCodeAt(n);return e}return(new l).encode(t)})(n),s=await((t,e,n,r,i)=>A&&C&&"function"==typeof u.subtle.importKey?u.subtle.importKey("raw",e,n,!1,i):k.importKey(e))(0,o,v,0,S),f=await(async(t,e,n)=>A&&C&&"function"==typeof u.subtle.deriveBits?await u.subtle.deriveBits(t,e,n):k.P(e,t.salt,m.iterations,n))(e.assign({salt:r},m),s,8*(2*_[t.X]+2)),c=new i(f);t.keys={key:V.g(K(c,0,_[t.X])),tt:V.g(K(c,_[t.X],2*_[t.X])),passwordVerification:K(c,2*_[t.X])}}function H(t,e){let n=t;return t.length+e.length&&(n=new i(t.length+e.length),n.set(t,0),n.set(e,t.length)),n}function K(t,e,n){return t.subarray(e,n)}class L{constructor(t,n){e.assign(this,{password:t,passwordVerification:n}),F(this,t)}append(t){const e=this;if(e.password){const n=j(e,t.subarray(0,12));if(e.password=null,n[11]!=e.passwordVerification)throw new r("Invalid pasword");t=t.subarray(12)}return j(e,t)}flush(){return{valid:!0,data:new i(0)}}}class T{constructor(t,n){e.assign(this,{password:t,passwordVerification:n}),F(this,t)}append(t){const e=this;let n,r;if(e.password){e.password=null;const o=u.getRandomValues(new i(12));o[11]=e.passwordVerification,n=new i(t.length+o.length),n.set(x(e,o),0),r=12}else n=new i(t.length),r=0;return n.set(x(e,t),r),n}flush(){return{data:new i(0)}}}function j(t,e){const n=new i(e.length);for(let r=0;r<e.length;r++)n[r]=W(t)^e[r],O(t,n[r]);return n}function x(t,e){const n=new i(e.length);for(let r=0;r<e.length;r++)n[r]=W(t)^e[r],O(t,e[r]);return n}function F(t,e){t.keys=[305419896,591751049,878082192],t.et=new h(t.keys[0]),t.nt=new h(t.keys[2]);for(let n=0;n<e.length;n++)O(t,e.charCodeAt(n))}function O(t,e){t.et.append([e]),t.keys[0]=~t.et.get(),t.keys[1]=G(t.keys[1]+q(t.keys[0])),t.keys[1]=G(n.imul(t.keys[1],134775813)+1),t.nt.append([t.keys[1]>>>24]),t.keys[2]=~t.nt.get()}function W(t){const e=2|t.keys[2];return q(n.imul(e,1^e)>>>8)}function q(t){return 255&t}function G(t){return 4294967295&t}class J{constructor(t,{signature:n,password:r,signed:i,compressed:o,zipCrypto:s,passwordVerification:f,encryptionStrength:c},{rt:l}){const u=!!r;e.assign(this,{signature:n,encrypted:u,signed:i,compressed:o,it:o&&new t({rt:l}),ot:i&&new h,zipCrypto:s,decrypt:u&&s?new L(r,f):new U(r,i,c)})}async append(t){const e=this;return e.encrypted&&t.length&&(t=await e.decrypt.append(t)),e.compressed&&t.length&&(t=await e.it.append(t)),(!e.encrypted||e.zipCrypto)&&e.signed&&t.length&&e.ot.append(t),t}async flush(){const t=this;let e,n=new i(0);if(t.encrypted){const e=t.decrypt.flush();if(!e.valid)throw new r("Invalid signature");n=e.data}if((!t.encrypted||t.zipCrypto)&&t.signed){const n=new c(new i(4).buffer);if(e=t.ot.get(),n.setUint32(0,e),t.signature!=n.getUint32(0,!1))throw new r("Invalid signature")}return t.compressed&&(n=await t.it.append(n)||new i(0),await t.it.flush()),{data:n,signature:e}}}class N{constructor(t,{encrypted:n,signed:r,compressed:i,level:o,zipCrypto:s,password:f,passwordVerification:c,encryptionStrength:l},{rt:u}){e.assign(this,{encrypted:n,signed:r,compressed:i,st:i&&new t({level:o||5,rt:u}),ot:r&&new h,zipCrypto:s,encrypt:n&&s?new T(f,c):new M(f,l)})}async append(t){const e=this;let n=t;return e.compressed&&t.length&&(n=await e.st.append(t)),e.encrypted&&n.length&&(n=await e.encrypt.append(n)),(!e.encrypted||e.zipCrypto)&&e.signed&&t.length&&e.ot.append(t),n}async flush(){const t=this;let e,n=new i(0);if(t.compressed&&(n=await t.st.flush()||new i(0)),t.encrypted){n=await t.encrypt.append(n);const r=t.encrypt.flush();e=r.signature;const o=new i(n.length+r.data.length);o.set(n,0),o.set(r.data,n.length),n=o}return t.encrypted&&!t.zipCrypto||!t.signed||(e=t.ot.get()),{data:n,signature:e}}}const Q={init(t){t.scripts&&t.scripts.length&&importScripts.apply(void 0,t.scripts);const e=t.options;let n;self.initCodec&&self.initCodec(),e.codecType.startsWith("deflate")?n=self.Deflate:e.codecType.startsWith("inflate")&&(n=self.Inflate),X=((t,e,n)=>e.codecType.startsWith("deflate")?new N(t,e,n):e.codecType.startsWith("inflate")?new J(t,e,n):void 0)(n,e,t.config)},append:async t=>({data:await X.append(t.data)}),flush:()=>X.flush()};let X;function Y(e){return Z(e.map((([e,n])=>new t(e).fill(n,0,e))))}function Z(e){return e.reduce(((e,n)=>e.concat(t.isArray(n)?Z(n):n)),[])}addEventListener("message",(async t=>{const e=t.data,n=e.type,r=Q[n];if(r)try{e.data&&(e.data=new i(e.data));const t=await r(e)||{};if(t.type=n,t.data)try{t.data=t.data.buffer,a(t,[t.data])}catch(e){a(t)}else a(t)}catch(t){a({type:n,error:{message:t.message,stack:t.stack}})}}));const $=[0,1,2,3].concat(...Y([[2,4],[2,5],[4,6],[4,7],[8,8],[8,9],[16,10],[16,11],[32,12],[32,13],[64,14],[64,15],[2,0],[1,16],[1,17],[2,18],[2,19],[4,20],[4,21],[8,22],[8,23],[16,24],[16,25],[32,26],[32,27],[64,28],[64,29]]));function tt(){const t=this;function e(t,e){let n=0;do{n|=1&t,t>>>=1,n<<=1}while(--e>0);return n>>>1}t.ft=r=>{const i=t.ct,o=t.ut.lt,s=t.ut.wt;let f,c,l,u=-1;for(r.ht=0,r.dt=573,f=0;s>f;f++)0!==i[2*f]?(r.yt[++r.ht]=u=f,r.bt[f]=0):i[2*f+1]=0;for(;2>r.ht;)l=r.yt[++r.ht]=2>u?++u:0,i[2*l]=1,r.bt[l]=0,r.kt--,o&&(r.gt-=o[2*l+1]);for(t.vt=u,f=n.floor(r.ht/2);f>=1;f--)r.St(i,f);l=s;do{f=r.yt[1],r.yt[1]=r.yt[r.ht--],r.St(i,1),c=r.yt[1],r.yt[--r.dt]=f,r.yt[--r.dt]=c,i[2*l]=i[2*f]+i[2*c],r.bt[l]=n.max(r.bt[f],r.bt[c])+1,i[2*f+1]=i[2*c+1]=l,r.yt[1]=l++,r.St(i,1)}while(r.ht>=2);r.yt[--r.dt]=r.yt[1],(e=>{const n=t.ct,r=t.ut.lt,i=t.ut.zt,o=t.ut._t,s=t.ut.It;let f,c,l,u,a,w,h=0;for(u=0;15>=u;u++)e.At[u]=0;for(n[2*e.yt[e.dt]+1]=0,f=e.dt+1;573>f;f++)c=e.yt[f],u=n[2*n[2*c+1]+1]+1,u>s&&(u=s,h++),n[2*c+1]=u,c>t.vt||(e.At[u]++,a=0,o>c||(a=i[c-o]),w=n[2*c],e.kt+=w*(u+a),r&&(e.gt+=w*(r[2*c+1]+a)));if(0!==h){do{for(u=s-1;0===e.At[u];)u--;e.At[u]--,e.At[u+1]+=2,e.At[s]--,h-=2}while(h>0);for(u=s;0!==u;u--)for(c=e.At[u];0!==c;)l=e.yt[--f],l>t.vt||(n[2*l+1]!=u&&(e.kt+=(u-n[2*l+1])*n[2*l],n[2*l+1]=u),c--)}})(r),((t,n,r)=>{const i=[];let o,s,f,c=0;for(o=1;15>=o;o++)i[o]=c=c+r[o-1]<<1;for(s=0;n>=s;s++)f=t[2*s+1],0!==f&&(t[2*s]=e(i[f]++,f))})(i,t.vt,r.At)}}function et(t,e,n,r,i){const o=this;o.lt=t,o.zt=e,o._t=n,o.wt=r,o.It=i}tt.Ct=[0,1,2,3,4,5,6,7].concat(...Y([[2,8],[2,9],[2,10],[2,11],[4,12],[4,13],[4,14],[4,15],[8,16],[8,17],[8,18],[8,19],[16,20],[16,21],[16,22],[16,23],[32,24],[32,25],[32,26],[31,27],[1,28]])),tt.Vt=[0,1,2,3,4,5,6,7,8,10,12,14,16,20,24,28,32,40,48,56,64,80,96,112,128,160,192,224,0],tt.Bt=[0,1,2,3,4,6,8,12,16,24,32,48,64,96,128,192,256,384,512,768,1024,1536,2048,3072,4096,6144,8192,12288,16384,24576],tt.Et=t=>256>t?$[t]:$[256+(t>>>7)],tt.Dt=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0],tt.Ut=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13],tt.Mt=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,7],tt.Pt=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];const nt=Y([[144,8],[112,9],[24,7],[8,8]]);et.Rt=Z([12,140,76,204,44,172,108,236,28,156,92,220,60,188,124,252,2,130,66,194,34,162,98,226,18,146,82,210,50,178,114,242,10,138,74,202,42,170,106,234,26,154,90,218,58,186,122,250,6,134,70,198,38,166,102,230,22,150,86,214,54,182,118,246,14,142,78,206,46,174,110,238,30,158,94,222,62,190,126,254,1,129,65,193,33,161,97,225,17,145,81,209,49,177,113,241,9,137,73,201,41,169,105,233,25,153,89,217,57,185,121,249,5,133,69,197,37,165,101,229,21,149,85,213,53,181,117,245,13,141,77,205,45,173,109,237,29,157,93,221,61,189,125,253,19,275,147,403,83,339,211,467,51,307,179,435,115,371,243,499,11,267,139,395,75,331,203,459,43,299,171,427,107,363,235,491,27,283,155,411,91,347,219,475,59,315,187,443,123,379,251,507,7,263,135,391,71,327,199,455,39,295,167,423,103,359,231,487,23,279,151,407,87,343,215,471,55,311,183,439,119,375,247,503,15,271,143,399,79,335,207,463,47,303,175,431,111,367,239,495,31,287,159,415,95,351,223,479,63,319,191,447,127,383,255,511,0,64,32,96,16,80,48,112,8,72,40,104,24,88,56,120,4,68,36,100,20,84,52,116,3,131,67,195,35,163,99,227].map(((t,e)=>[t,nt[e]])));const rt=Y([[30,5]]);function it(t,e,n,r,i){const o=this;o.Ht=t,o.Kt=e,o.Lt=n,o.Tt=r,o.jt=i}et.xt=Z([0,16,8,24,4,20,12,28,2,18,10,26,6,22,14,30,1,17,9,25,5,21,13,29,3,19,11,27,7,23].map(((t,e)=>[t,rt[e]]))),et.Ft=new et(et.Rt,tt.Dt,257,286,15),et.Ot=new et(et.xt,tt.Ut,0,30,15),et.Wt=new et(null,tt.Mt,0,19,7);const ot=[new it(0,0,0,0,0),new it(4,4,8,4,1),new it(4,5,16,8,1),new it(4,6,32,32,1),new it(4,4,16,16,2),new it(8,16,32,32,2),new it(8,16,128,128,2),new it(8,32,128,256,2),new it(32,128,258,1024,2),new it(32,258,258,4096,2)],st=["need dictionary","stream end","","","stream error","data error","","buffer error","",""];function ft(t,e,n,r){const i=t[2*e],o=t[2*n];return o>i||i==o&&r[e]<=r[n]}function ct(){const t=this;let e,r,s,f,c,l,u,a,w,h,d,p,y,b,k,g,v,m,S,z,_,I,A,C,V,B,E,D,U,M,P,R,H;const K=new tt,L=new tt,T=new tt;let j,x,F,O,W,q;function G(){let e;for(e=0;286>e;e++)P[2*e]=0;for(e=0;30>e;e++)R[2*e]=0;for(e=0;19>e;e++)H[2*e]=0;P[512]=1,t.kt=t.gt=0,x=F=0}function J(t,e){let n,r=-1,i=t[1],o=0,s=7,f=4;0===i&&(s=138,f=3),t[2*(e+1)+1]=65535;for(let c=0;e>=c;c++)n=i,i=t[2*(c+1)+1],++o<s&&n==i||(f>o?H[2*n]+=o:0!==n?(n!=r&&H[2*n]++,H[32]++):o>10?H[36]++:H[34]++,o=0,r=n,0===i?(s=138,f=3):n==i?(s=6,f=3):(s=7,f=4))}function N(e){t.qt[t.pending++]=e}function Q(t){N(255&t),N(t>>>8&255)}function X(t,e){let n;const r=e;q>16-r?(n=t,W|=n<<q&65535,Q(W),W=n>>>16-q,q+=r-16):(W|=t<<q&65535,q+=r)}function Y(t,e){const n=2*t;X(65535&e[n],65535&e[n+1])}function Z(t,e){let n,r,i=-1,o=t[1],s=0,f=7,c=4;for(0===o&&(f=138,c=3),n=0;e>=n;n++)if(r=o,o=t[2*(n+1)+1],++s>=f||r!=o){if(c>s)do{Y(r,H)}while(0!=--s);else 0!==r?(r!=i&&(Y(r,H),s--),Y(16,H),X(s-3,2)):s>10?(Y(18,H),X(s-11,7)):(Y(17,H),X(s-3,3));s=0,i=r,0===o?(f=138,c=3):r==o?(f=6,c=3):(f=7,c=4)}}function $(){16==q?(Q(W),W=0,q=0):8>q||(N(255&W),W>>>=8,q-=8)}function nt(e,r){let i,o,s;if(t.Gt[x]=e,t.Jt[x]=255&r,x++,0===e?P[2*r]++:(F++,e--,P[2*(tt.Ct[r]+256+1)]++,R[2*tt.Et(e)]++),0==(8191&x)&&E>2){for(i=8*x,o=_-v,s=0;30>s;s++)i+=R[2*s]*(5+tt.Ut[s]);if(i>>>=3,F<n.floor(x/2)&&i<n.floor(o/2))return!0}return x==j-1}function rt(e,n){let r,i,o,s,f=0;if(0!==x)do{r=t.Gt[f],i=t.Jt[f],f++,0===r?Y(i,e):(o=tt.Ct[i],Y(o+256+1,e),s=tt.Dt[o],0!==s&&(i-=tt.Vt[o],X(i,s)),r--,o=tt.Et(r),Y(o,n),s=tt.Ut[o],0!==s&&(r-=tt.Bt[o],X(r,s)))}while(x>f);Y(256,e),O=e[513]}function it(){q>8?Q(W):q>0&&N(255&W),W=0,q=0}function ct(e,n,r){X(0+(r?1:0),3),((e,n)=>{it(),O=8,Q(n),Q(~n),t.qt.set(a.subarray(e,e+n),t.pending),t.pending+=n})(e,n)}function lt(n){((e,n,r)=>{let i,o,s=0;E>0?(K.ft(t),L.ft(t),s=(()=>{let e;for(J(P,K.vt),J(R,L.vt),T.ft(t),e=18;e>=3&&0===H[2*tt.Pt[e]+1];e--);return t.kt+=14+3*(e+1),e})(),i=t.kt+3+7>>>3,o=t.gt+3+7>>>3,o>i||(i=o)):i=o=n+5,n+4>i||-1==e?o==i?(X(2+(r?1:0),3),rt(et.Rt,et.xt)):(X(4+(r?1:0),3),((t,e,n)=>{let r;for(X(t-257,5),X(e-1,5),X(n-4,4),r=0;n>r;r++)X(H[2*tt.Pt[r]+1],3);Z(P,t-1),Z(R,e-1)})(K.vt+1,L.vt+1,s+1),rt(P,R)):ct(e,n,r),G(),r&&it()})(0>v?-1:v,_-v,n),v=_,e.Nt()}function ut(){let t,n,r,i;do{if(i=w-A-_,0===i&&0===_&&0===A)i=c;else if(-1==i)i--;else if(_>=c+c-262){a.set(a.subarray(c,c+c),0),I-=c,_-=c,v-=c,t=y,r=t;do{n=65535&d[--r],d[r]=c>n?0:n-c}while(0!=--t);t=c,r=t;do{n=65535&h[--r],h[r]=c>n?0:n-c}while(0!=--t);i+=c}if(0===e.Qt)return;t=e.Xt(a,_+A,i),A+=t,3>A||(p=255&a[_],p=(p<<g^255&a[_+1])&k)}while(262>A&&0!==e.Qt)}function at(t){let e,n,r=V,i=_,o=C;const s=_>c-262?_-(c-262):0;let f=M;const l=u,w=_+258;let d=a[i+o-1],p=a[i+o];U>C||(r>>=2),f>A&&(f=A);do{if(e=t,a[e+o]==p&&a[e+o-1]==d&&a[e]==a[i]&&a[++e]==a[i+1]){i+=2,e++;do{}while(a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&a[++i]==a[++e]&&w>i);if(n=258-(w-i),i=w-258,n>o){if(I=t,o=n,n>=f)break;d=a[i+o-1],p=a[i+o]}}}while((t=65535&h[t&l])>s&&0!=--r);return o>A?A:o}t.bt=[],t.At=[],t.yt=[],P=[],R=[],H=[],t.St=(e,n)=>{const r=t.yt,i=r[n];let o=n<<1;for(;o<=t.ht&&(o<t.ht&&ft(e,r[o+1],r[o],t.bt)&&o++,!ft(e,i,r[o],t.bt));)r[n]=r[o],n=o,o<<=1;r[n]=i},t.Yt=(e,S,I,x,F,J)=>(x||(x=8),F||(F=8),J||(J=0),e.Zt=null,-1==S&&(S=6),1>F||F>9||8!=x||9>I||I>15||0>S||S>9||0>J||J>2?-2:(e.$t=t,l=I,c=1<<l,u=c-1,b=F+7,y=1<<b,k=y-1,g=n.floor((b+3-1)/3),a=new i(2*c),h=[],d=[],j=1<<F+6,t.qt=new i(4*j),s=4*j,t.Gt=new o(j),t.Jt=new i(j),E=S,D=J,(e=>(e.te=e.ee=0,e.Zt=null,t.pending=0,t.ne=0,r=113,f=0,K.ct=P,K.ut=et.Ft,L.ct=R,L.ut=et.Ot,T.ct=H,T.ut=et.Wt,W=0,q=0,O=8,G(),(()=>{w=2*c,d[y-1]=0;for(let t=0;y-1>t;t++)d[t]=0;B=ot[E].Kt,U=ot[E].Ht,M=ot[E].Lt,V=ot[E].Tt,_=0,v=0,A=0,m=C=2,z=0,p=0})(),0))(e))),t.re=()=>42!=r&&113!=r&&666!=r?-2:(t.Jt=null,t.Gt=null,t.qt=null,d=null,h=null,a=null,t.$t=null,113==r?-3:0),t.ie=(t,e,n)=>{let r=0;return-1==e&&(e=6),0>e||e>9||0>n||n>2?-2:(ot[E].jt!=ot[e].jt&&0!==t.te&&(r=t.st(1)),E!=e&&(E=e,B=ot[E].Kt,U=ot[E].Ht,M=ot[E].Lt,V=ot[E].Tt),D=n,r)},t.oe=(t,e,n)=>{let i,o=n,s=0;if(!e||42!=r)return-2;if(3>o)return 0;for(o>c-262&&(o=c-262,s=n-o),a.set(e.subarray(s,s+o),0),_=o,v=o,p=255&a[0],p=(p<<g^255&a[1])&k,i=0;o-3>=i;i++)p=(p<<g^255&a[i+2])&k,h[i&u]=d[p],d[p]=i;return 0},t.st=(n,i)=>{let o,w,b,V,U;if(i>4||0>i)return-2;if(!n.se||!n.fe&&0!==n.Qt||666==r&&4!=i)return n.Zt=st[4],-2;if(0===n.ce)return n.Zt=st[7],-5;var M;if(e=n,V=f,f=i,42==r&&(w=8+(l-8<<4)<<8,b=(E-1&255)>>1,b>3&&(b=3),w|=b<<6,0!==_&&(w|=32),w+=31-w%31,r=113,N((M=w)>>8&255),N(255&M)),0!==t.pending){if(e.Nt(),0===e.ce)return f=-1,0}else if(0===e.Qt&&V>=i&&4!=i)return e.Zt=st[7],-5;if(666==r&&0!==e.Qt)return n.Zt=st[7],-5;if(0!==e.Qt||0!==A||0!=i&&666!=r){switch(U=-1,ot[E].jt){case 0:U=(t=>{let n,r=65535;for(r>s-5&&(r=s-5);;){if(1>=A){if(ut(),0===A&&0==t)return 0;if(0===A)break}if(_+=A,A=0,n=v+r,(0===_||_>=n)&&(A=_-n,_=n,lt(!1),0===e.ce))return 0;if(_-v>=c-262&&(lt(!1),0===e.ce))return 0}return lt(4==t),0===e.ce?4==t?2:0:4==t?3:1})(i);break;case 1:U=(t=>{let n,r=0;for(;;){if(262>A){if(ut(),262>A&&0==t)return 0;if(0===A)break}if(3>A||(p=(p<<g^255&a[_+2])&k,r=65535&d[p],h[_&u]=d[p],d[p]=_),0===r||(_-r&65535)>c-262||2!=D&&(m=at(r)),3>m)n=nt(0,255&a[_]),A--,_++;else if(n=nt(_-I,m-3),A-=m,m>B||3>A)_+=m,m=0,p=255&a[_],p=(p<<g^255&a[_+1])&k;else{m--;do{_++,p=(p<<g^255&a[_+2])&k,r=65535&d[p],h[_&u]=d[p],d[p]=_}while(0!=--m);_++}if(n&&(lt(!1),0===e.ce))return 0}return lt(4==t),0===e.ce?4==t?2:0:4==t?3:1})(i);break;case 2:U=(t=>{let n,r,i=0;for(;;){if(262>A){if(ut(),262>A&&0==t)return 0;if(0===A)break}if(3>A||(p=(p<<g^255&a[_+2])&k,i=65535&d[p],h[_&u]=d[p],d[p]=_),C=m,S=I,m=2,0!==i&&B>C&&c-262>=(_-i&65535)&&(2!=D&&(m=at(i)),5>=m&&(1==D||3==m&&_-I>4096)&&(m=2)),3>C||m>C)if(0!==z){if(n=nt(0,255&a[_-1]),n&&lt(!1),_++,A--,0===e.ce)return 0}else z=1,_++,A--;else{r=_+A-3,n=nt(_-1-S,C-3),A-=C-1,C-=2;do{++_>r||(p=(p<<g^255&a[_+2])&k,i=65535&d[p],h[_&u]=d[p],d[p]=_)}while(0!=--C);if(z=0,m=2,_++,n&&(lt(!1),0===e.ce))return 0}}return 0!==z&&(n=nt(0,255&a[_-1]),z=0),lt(4==t),0===e.ce?4==t?2:0:4==t?3:1})(i)}if(2!=U&&3!=U||(r=666),0==U||2==U)return 0===e.ce&&(f=-1),0;if(1==U){if(1==i)X(2,3),Y(256,et.Rt),$(),9>1+O+10-q&&(X(2,3),Y(256,et.Rt),$()),O=7;else if(ct(0,0,!1),3==i)for(o=0;y>o;o++)d[o]=0;if(e.Nt(),0===e.ce)return f=-1,0}}return 4!=i?0:1}}function lt(){const t=this;t.le=0,t.ue=0,t.Qt=0,t.te=0,t.ce=0,t.ee=0}function ut(t){const e=new lt,o=(s=t&&t.rt?t.rt:65536)+5*(n.floor(s/16383)+1);var s;const f=new i(o);let c=t?t.level:-1;void 0===c&&(c=-1),e.Yt(c),e.se=f,this.append=(t,n)=>{let s,c,l=0,u=0,a=0;const w=[];if(t.length){e.le=0,e.fe=t,e.Qt=t.length;do{if(e.ue=0,e.ce=o,s=e.st(0),0!=s)throw new r("deflating: "+e.Zt);e.ue&&(e.ue==o?w.push(new i(f)):w.push(f.slice(0,e.ue))),a+=e.ue,n&&e.le>0&&e.le!=l&&(n(e.le),l=e.le)}while(e.Qt>0||0===e.ce);return w.length>1?(c=new i(a),w.forEach((t=>{c.set(t,u),u+=t.length}))):c=w[0]||new i(0),c}},this.flush=()=>{let t,n,s=0,c=0;const l=[];do{if(e.ue=0,e.ce=o,t=e.st(4),1!=t&&0!=t)throw new r("deflating: "+e.Zt);o-e.ce>0&&l.push(f.slice(0,e.ue)),c+=e.ue}while(e.Qt>0||0===e.ce);return e.re(),n=new i(c),l.forEach((t=>{n.set(t,s),s+=t.length})),n}}lt.prototype={Yt:function(t,e){const n=this;return n.$t=new ct,e||(e=15),n.$t.Yt(n,t,e)},st:function(t){const e=this;return e.$t?e.$t.st(e,t):-2},re:function(){const t=this;if(!t.$t)return-2;const e=t.$t.re();return t.$t=null,e},ie:function(t,e){const n=this;return n.$t?n.$t.ie(n,t,e):-2},oe:function(t,e){const n=this;return n.$t?n.$t.oe(n,t,e):-2},Xt:function(t,e,n){const r=this;let i=r.Qt;return i>n&&(i=n),0===i?0:(r.Qt-=i,t.set(r.fe.subarray(r.le,r.le+i),e),r.le+=i,r.te+=i,i)},Nt:function(){const t=this;let e=t.$t.pending;e>t.ce&&(e=t.ce),0!==e&&(t.se.set(t.$t.qt.subarray(t.$t.ne,t.$t.ne+e),t.ue),t.ue+=e,t.$t.ne+=e,t.ee+=e,t.ce-=e,t.$t.pending-=e,0===t.$t.pending&&(t.$t.ne=0))}};const at=[0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535],wt=[96,7,256,0,8,80,0,8,16,84,8,115,82,7,31,0,8,112,0,8,48,0,9,192,80,7,10,0,8,96,0,8,32,0,9,160,0,8,0,0,8,128,0,8,64,0,9,224,80,7,6,0,8,88,0,8,24,0,9,144,83,7,59,0,8,120,0,8,56,0,9,208,81,7,17,0,8,104,0,8,40,0,9,176,0,8,8,0,8,136,0,8,72,0,9,240,80,7,4,0,8,84,0,8,20,85,8,227,83,7,43,0,8,116,0,8,52,0,9,200,81,7,13,0,8,100,0,8,36,0,9,168,0,8,4,0,8,132,0,8,68,0,9,232,80,7,8,0,8,92,0,8,28,0,9,152,84,7,83,0,8,124,0,8,60,0,9,216,82,7,23,0,8,108,0,8,44,0,9,184,0,8,12,0,8,140,0,8,76,0,9,248,80,7,3,0,8,82,0,8,18,85,8,163,83,7,35,0,8,114,0,8,50,0,9,196,81,7,11,0,8,98,0,8,34,0,9,164,0,8,2,0,8,130,0,8,66,0,9,228,80,7,7,0,8,90,0,8,26,0,9,148,84,7,67,0,8,122,0,8,58,0,9,212,82,7,19,0,8,106,0,8,42,0,9,180,0,8,10,0,8,138,0,8,74,0,9,244,80,7,5,0,8,86,0,8,22,192,8,0,83,7,51,0,8,118,0,8,54,0,9,204,81,7,15,0,8,102,0,8,38,0,9,172,0,8,6,0,8,134,0,8,70,0,9,236,80,7,9,0,8,94,0,8,30,0,9,156,84,7,99,0,8,126,0,8,62,0,9,220,82,7,27,0,8,110,0,8,46,0,9,188,0,8,14,0,8,142,0,8,78,0,9,252,96,7,256,0,8,81,0,8,17,85,8,131,82,7,31,0,8,113,0,8,49,0,9,194,80,7,10,0,8,97,0,8,33,0,9,162,0,8,1,0,8,129,0,8,65,0,9,226,80,7,6,0,8,89,0,8,25,0,9,146,83,7,59,0,8,121,0,8,57,0,9,210,81,7,17,0,8,105,0,8,41,0,9,178,0,8,9,0,8,137,0,8,73,0,9,242,80,7,4,0,8,85,0,8,21,80,8,258,83,7,43,0,8,117,0,8,53,0,9,202,81,7,13,0,8,101,0,8,37,0,9,170,0,8,5,0,8,133,0,8,69,0,9,234,80,7,8,0,8,93,0,8,29,0,9,154,84,7,83,0,8,125,0,8,61,0,9,218,82,7,23,0,8,109,0,8,45,0,9,186,0,8,13,0,8,141,0,8,77,0,9,250,80,7,3,0,8,83,0,8,19,85,8,195,83,7,35,0,8,115,0,8,51,0,9,198,81,7,11,0,8,99,0,8,35,0,9,166,0,8,3,0,8,131,0,8,67,0,9,230,80,7,7,0,8,91,0,8,27,0,9,150,84,7,67,0,8,123,0,8,59,0,9,214,82,7,19,0,8,107,0,8,43,0,9,182,0,8,11,0,8,139,0,8,75,0,9,246,80,7,5,0,8,87,0,8,23,192,8,0,83,7,51,0,8,119,0,8,55,0,9,206,81,7,15,0,8,103,0,8,39,0,9,174,0,8,7,0,8,135,0,8,71,0,9,238,80,7,9,0,8,95,0,8,31,0,9,158,84,7,99,0,8,127,0,8,63,0,9,222,82,7,27,0,8,111,0,8,47,0,9,190,0,8,15,0,8,143,0,8,79,0,9,254,96,7,256,0,8,80,0,8,16,84,8,115,82,7,31,0,8,112,0,8,48,0,9,193,80,7,10,0,8,96,0,8,32,0,9,161,0,8,0,0,8,128,0,8,64,0,9,225,80,7,6,0,8,88,0,8,24,0,9,145,83,7,59,0,8,120,0,8,56,0,9,209,81,7,17,0,8,104,0,8,40,0,9,177,0,8,8,0,8,136,0,8,72,0,9,241,80,7,4,0,8,84,0,8,20,85,8,227,83,7,43,0,8,116,0,8,52,0,9,201,81,7,13,0,8,100,0,8,36,0,9,169,0,8,4,0,8,132,0,8,68,0,9,233,80,7,8,0,8,92,0,8,28,0,9,153,84,7,83,0,8,124,0,8,60,0,9,217,82,7,23,0,8,108,0,8,44,0,9,185,0,8,12,0,8,140,0,8,76,0,9,249,80,7,3,0,8,82,0,8,18,85,8,163,83,7,35,0,8,114,0,8,50,0,9,197,81,7,11,0,8,98,0,8,34,0,9,165,0,8,2,0,8,130,0,8,66,0,9,229,80,7,7,0,8,90,0,8,26,0,9,149,84,7,67,0,8,122,0,8,58,0,9,213,82,7,19,0,8,106,0,8,42,0,9,181,0,8,10,0,8,138,0,8,74,0,9,245,80,7,5,0,8,86,0,8,22,192,8,0,83,7,51,0,8,118,0,8,54,0,9,205,81,7,15,0,8,102,0,8,38,0,9,173,0,8,6,0,8,134,0,8,70,0,9,237,80,7,9,0,8,94,0,8,30,0,9,157,84,7,99,0,8,126,0,8,62,0,9,221,82,7,27,0,8,110,0,8,46,0,9,189,0,8,14,0,8,142,0,8,78,0,9,253,96,7,256,0,8,81,0,8,17,85,8,131,82,7,31,0,8,113,0,8,49,0,9,195,80,7,10,0,8,97,0,8,33,0,9,163,0,8,1,0,8,129,0,8,65,0,9,227,80,7,6,0,8,89,0,8,25,0,9,147,83,7,59,0,8,121,0,8,57,0,9,211,81,7,17,0,8,105,0,8,41,0,9,179,0,8,9,0,8,137,0,8,73,0,9,243,80,7,4,0,8,85,0,8,21,80,8,258,83,7,43,0,8,117,0,8,53,0,9,203,81,7,13,0,8,101,0,8,37,0,9,171,0,8,5,0,8,133,0,8,69,0,9,235,80,7,8,0,8,93,0,8,29,0,9,155,84,7,83,0,8,125,0,8,61,0,9,219,82,7,23,0,8,109,0,8,45,0,9,187,0,8,13,0,8,141,0,8,77,0,9,251,80,7,3,0,8,83,0,8,19,85,8,195,83,7,35,0,8,115,0,8,51,0,9,199,81,7,11,0,8,99,0,8,35,0,9,167,0,8,3,0,8,131,0,8,67,0,9,231,80,7,7,0,8,91,0,8,27,0,9,151,84,7,67,0,8,123,0,8,59,0,9,215,82,7,19,0,8,107,0,8,43,0,9,183,0,8,11,0,8,139,0,8,75,0,9,247,80,7,5,0,8,87,0,8,23,192,8,0,83,7,51,0,8,119,0,8,55,0,9,207,81,7,15,0,8,103,0,8,39,0,9,175,0,8,7,0,8,135,0,8,71,0,9,239,80,7,9,0,8,95,0,8,31,0,9,159,84,7,99,0,8,127,0,8,63,0,9,223,82,7,27,0,8,111,0,8,47,0,9,191,0,8,15,0,8,143,0,8,79,0,9,255],ht=[80,5,1,87,5,257,83,5,17,91,5,4097,81,5,5,89,5,1025,85,5,65,93,5,16385,80,5,3,88,5,513,84,5,33,92,5,8193,82,5,9,90,5,2049,86,5,129,192,5,24577,80,5,2,87,5,385,83,5,25,91,5,6145,81,5,7,89,5,1537,85,5,97,93,5,24577,80,5,4,88,5,769,84,5,49,92,5,12289,82,5,13,90,5,3073,86,5,193,192,5,24577],dt=[3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258,0,0],pt=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0,112,112],yt=[1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577],bt=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];function kt(){let t,e,n,r,i,o;function s(t,e,s,f,c,l,u,a,w,h,d){let p,y,b,k,g,v,m,S,z,_,I,A,C,V,B;_=0,g=s;do{n[t[e+_]]++,_++,g--}while(0!==g);if(n[0]==s)return u[0]=-1,a[0]=0,0;for(S=a[0],v=1;15>=v&&0===n[v];v++);for(m=v,v>S&&(S=v),g=15;0!==g&&0===n[g];g--);for(b=g,S>g&&(S=g),a[0]=S,V=1<<v;g>v;v++,V<<=1)if(0>(V-=n[v]))return-3;if(0>(V-=n[g]))return-3;for(n[g]+=V,o[1]=v=0,_=1,C=2;0!=--g;)o[C]=v+=n[_],C++,_++;g=0,_=0;do{0!==(v=t[e+_])&&(d[o[v]++]=g),_++}while(++g<s);for(s=o[b],o[0]=g=0,_=0,k=-1,A=-S,i[0]=0,I=0,B=0;b>=m;m++)for(p=n[m];0!=p--;){for(;m>A+S;){if(k++,A+=S,B=b-A,B=B>S?S:B,(y=1<<(v=m-A))>p+1&&(y-=p+1,C=m,B>v))for(;++v<B&&(y<<=1)>n[++C];)y-=n[C];if(B=1<<v,h[0]+B>1440)return-3;i[k]=I=h[0],h[0]+=B,0!==k?(o[k]=g,r[0]=v,r[1]=S,v=g>>>A-S,r[2]=I-i[k-1]-v,w.set(r,3*(i[k-1]+v))):u[0]=I}for(r[1]=m-A,s>_?d[_]<f?(r[0]=256>d[_]?0:96,r[2]=d[_++]):(r[0]=l[d[_]-f]+16+64,r[2]=c[d[_++]-f]):r[0]=192,y=1<<m-A,v=g>>>A;B>v;v+=y)w.set(r,3*(I+v));for(v=1<<m-1;0!=(g&v);v>>>=1)g^=v;for(g^=v,z=(1<<A)-1;(g&z)!=o[k];)k--,A-=S,z=(1<<A)-1}return 0!==V&&1!=b?-5:0}function c(s){let c;for(t||(t=[],e=[],n=new f(16),r=[],i=new f(15),o=new f(16)),e.length<s&&(e=[]),c=0;s>c;c++)e[c]=0;for(c=0;16>c;c++)n[c]=0;for(c=0;3>c;c++)r[c]=0;i.set(n.subarray(0,15),0),o.set(n.subarray(0,16),0)}this.ae=(n,r,i,o,f)=>{let l;return c(19),t[0]=0,l=s(n,0,19,19,null,null,i,r,o,t,e),-3==l?f.Zt="oversubscribed dynamic bit lengths tree":-5!=l&&0!==r[0]||(f.Zt="incomplete dynamic bit lengths tree",l=-3),l},this.we=(n,r,i,o,f,l,u,a,w)=>{let h;return c(288),t[0]=0,h=s(i,0,n,257,dt,pt,l,o,a,t,e),0!=h||0===o[0]?(-3==h?w.Zt="oversubscribed literal/length tree":-4!=h&&(w.Zt="incomplete literal/length tree",h=-3),h):(c(288),h=s(i,n,r,0,yt,bt,u,f,a,t,e),0!=h||0===f[0]&&n>257?(-3==h?w.Zt="oversubscribed distance tree":-5==h?(w.Zt="incomplete distance tree",h=-3):-4!=h&&(w.Zt="empty distance tree with lengths",h=-3),h):0)}}function gt(){const t=this;let e,n,r,i,o=0,s=0,f=0,c=0,l=0,u=0,a=0,w=0,h=0,d=0;function p(t,e,n,r,i,o,s,f){let c,l,u,a,w,h,d,p,y,b,k,g,v,m,S,z;d=f.le,p=f.Qt,w=s.he,h=s.de,y=s.write,b=y<s.read?s.read-y-1:s.end-y,k=at[t],g=at[e];do{for(;20>h;)p--,w|=(255&f.pe(d++))<<h,h+=8;if(c=w&k,l=n,u=r,z=3*(u+c),0!==(a=l[z]))for(;;){if(w>>=l[z+1],h-=l[z+1],0!=(16&a)){for(a&=15,v=l[z+2]+(w&at[a]),w>>=a,h-=a;15>h;)p--,w|=(255&f.pe(d++))<<h,h+=8;for(c=w&g,l=i,u=o,z=3*(u+c),a=l[z];;){if(w>>=l[z+1],h-=l[z+1],0!=(16&a)){for(a&=15;a>h;)p--,w|=(255&f.pe(d++))<<h,h+=8;if(m=l[z+2]+(w&at[a]),w>>=a,h-=a,b-=v,m>y){S=y-m;do{S+=s.end}while(0>S);if(a=s.end-S,v>a){if(v-=a,y-S>0&&a>y-S)do{s.ye[y++]=s.ye[S++]}while(0!=--a);else s.ye.set(s.ye.subarray(S,S+a),y),y+=a,S+=a,a=0;S=0}}else S=y-m,y-S>0&&2>y-S?(s.ye[y++]=s.ye[S++],s.ye[y++]=s.ye[S++],v-=2):(s.ye.set(s.ye.subarray(S,S+2),y),y+=2,S+=2,v-=2);if(y-S>0&&v>y-S)do{s.ye[y++]=s.ye[S++]}while(0!=--v);else s.ye.set(s.ye.subarray(S,S+v),y),y+=v,S+=v,v=0;break}if(0!=(64&a))return f.Zt="invalid distance code",v=f.Qt-p,v=v>h>>3?h>>3:v,p+=v,d-=v,h-=v<<3,s.he=w,s.de=h,f.Qt=p,f.te+=d-f.le,f.le=d,s.write=y,-3;c+=l[z+2],c+=w&at[a],z=3*(u+c),a=l[z]}break}if(0!=(64&a))return 0!=(32&a)?(v=f.Qt-p,v=v>h>>3?h>>3:v,p+=v,d-=v,h-=v<<3,s.he=w,s.de=h,f.Qt=p,f.te+=d-f.le,f.le=d,s.write=y,1):(f.Zt="invalid literal/length code",v=f.Qt-p,v=v>h>>3?h>>3:v,p+=v,d-=v,h-=v<<3,s.he=w,s.de=h,f.Qt=p,f.te+=d-f.le,f.le=d,s.write=y,-3);if(c+=l[z+2],c+=w&at[a],z=3*(u+c),0===(a=l[z])){w>>=l[z+1],h-=l[z+1],s.ye[y++]=l[z+2],b--;break}}else w>>=l[z+1],h-=l[z+1],s.ye[y++]=l[z+2],b--}while(b>=258&&p>=10);return v=f.Qt-p,v=v>h>>3?h>>3:v,p+=v,d-=v,h-=v<<3,s.he=w,s.de=h,f.Qt=p,f.te+=d-f.le,f.le=d,s.write=y,0}t.init=(t,o,s,f,c,l)=>{e=0,a=t,w=o,r=s,h=f,i=c,d=l,n=null},t.be=(t,y,b)=>{let k,g,v,m,S,z,_,I=0,A=0,C=0;for(C=y.le,m=y.Qt,I=t.he,A=t.de,S=t.write,z=S<t.read?t.read-S-1:t.end-S;;)switch(e){case 0:if(z>=258&&m>=10&&(t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,b=p(a,w,r,h,i,d,t,y),C=y.le,m=y.Qt,I=t.he,A=t.de,S=t.write,z=S<t.read?t.read-S-1:t.end-S,0!=b)){e=1==b?7:9;break}f=a,n=r,s=h,e=1;case 1:for(k=f;k>A;){if(0===m)return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);b=0,m--,I|=(255&y.pe(C++))<<A,A+=8}if(g=3*(s+(I&at[k])),I>>>=n[g+1],A-=n[g+1],v=n[g],0===v){c=n[g+2],e=6;break}if(0!=(16&v)){l=15&v,o=n[g+2],e=2;break}if(0==(64&v)){f=v,s=g/3+n[g+2];break}if(0!=(32&v)){e=7;break}return e=9,y.Zt="invalid literal/length code",b=-3,t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);case 2:for(k=l;k>A;){if(0===m)return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);b=0,m--,I|=(255&y.pe(C++))<<A,A+=8}o+=I&at[k],I>>=k,A-=k,f=w,n=i,s=d,e=3;case 3:for(k=f;k>A;){if(0===m)return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);b=0,m--,I|=(255&y.pe(C++))<<A,A+=8}if(g=3*(s+(I&at[k])),I>>=n[g+1],A-=n[g+1],v=n[g],0!=(16&v)){l=15&v,u=n[g+2],e=4;break}if(0==(64&v)){f=v,s=g/3+n[g+2];break}return e=9,y.Zt="invalid distance code",b=-3,t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);case 4:for(k=l;k>A;){if(0===m)return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);b=0,m--,I|=(255&y.pe(C++))<<A,A+=8}u+=I&at[k],I>>=k,A-=k,e=5;case 5:for(_=S-u;0>_;)_+=t.end;for(;0!==o;){if(0===z&&(S==t.end&&0!==t.read&&(S=0,z=S<t.read?t.read-S-1:t.end-S),0===z&&(t.write=S,b=t.ke(y,b),S=t.write,z=S<t.read?t.read-S-1:t.end-S,S==t.end&&0!==t.read&&(S=0,z=S<t.read?t.read-S-1:t.end-S),0===z)))return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);t.ye[S++]=t.ye[_++],z--,_==t.end&&(_=0),o--}e=0;break;case 6:if(0===z&&(S==t.end&&0!==t.read&&(S=0,z=S<t.read?t.read-S-1:t.end-S),0===z&&(t.write=S,b=t.ke(y,b),S=t.write,z=S<t.read?t.read-S-1:t.end-S,S==t.end&&0!==t.read&&(S=0,z=S<t.read?t.read-S-1:t.end-S),0===z)))return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);b=0,t.ye[S++]=c,z--,e=0;break;case 7:if(A>7&&(A-=8,m++,C--),t.write=S,b=t.ke(y,b),S=t.write,z=S<t.read?t.read-S-1:t.end-S,t.read!=t.write)return t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);e=8;case 8:return b=1,t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);case 9:return b=-3,t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b);default:return b=-2,t.he=I,t.de=A,y.Qt=m,y.te+=C-y.le,y.le=C,t.write=S,t.ke(y,b)}},t.ge=()=>{}}kt.ve=(t,e,n,r)=>(t[0]=9,e[0]=5,n[0]=wt,r[0]=ht,0);const vt=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];function mt(t,e){const n=this;let r,o=0,s=0,c=0,l=0;const u=[0],a=[0],w=new gt;let h=0,d=new f(4320);const p=new kt;n.de=0,n.he=0,n.ye=new i(e),n.end=e,n.read=0,n.write=0,n.reset=(t,e)=>{e&&(e[0]=0),6==o&&w.ge(t),o=0,n.de=0,n.he=0,n.read=n.write=0},n.reset(t,null),n.ke=(t,e)=>{let r,i,o;return i=t.ue,o=n.read,r=(o>n.write?n.end:n.write)-o,r>t.ce&&(r=t.ce),0!==r&&-5==e&&(e=0),t.ce-=r,t.ee+=r,t.se.set(n.ye.subarray(o,o+r),i),i+=r,o+=r,o==n.end&&(o=0,n.write==n.end&&(n.write=0),r=n.write-o,r>t.ce&&(r=t.ce),0!==r&&-5==e&&(e=0),t.ce-=r,t.ee+=r,t.se.set(n.ye.subarray(o,o+r),i),i+=r,o+=r),t.ue=i,n.read=o,e},n.be=(t,e)=>{let i,f,y,b,k,g,v,m;for(b=t.le,k=t.Qt,f=n.he,y=n.de,g=n.write,v=g<n.read?n.read-g-1:n.end-g;;){let S,z,_,I,A,C,V,B;switch(o){case 0:for(;3>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}switch(i=7&f,h=1&i,i>>>1){case 0:f>>>=3,y-=3,i=7&y,f>>>=i,y-=i,o=1;break;case 1:S=[],z=[],_=[[]],I=[[]],kt.ve(S,z,_,I),w.init(S[0],z[0],_[0],0,I[0],0),f>>>=3,y-=3,o=6;break;case 2:f>>>=3,y-=3,o=3;break;case 3:return f>>>=3,y-=3,o=9,t.Zt="invalid block type",e=-3,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e)}break;case 1:for(;32>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}if((~f>>>16&65535)!=(65535&f))return o=9,t.Zt="invalid stored block lengths",e=-3,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);s=65535&f,f=y=0,o=0!==s?2:0!==h?7:0;break;case 2:if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);if(0===v&&(g==n.end&&0!==n.read&&(g=0,v=g<n.read?n.read-g-1:n.end-g),0===v&&(n.write=g,e=n.ke(t,e),g=n.write,v=g<n.read?n.read-g-1:n.end-g,g==n.end&&0!==n.read&&(g=0,v=g<n.read?n.read-g-1:n.end-g),0===v)))return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);if(e=0,i=s,i>k&&(i=k),i>v&&(i=v),n.ye.set(t.Xt(b,i),g),b+=i,k-=i,g+=i,v-=i,0!=(s-=i))break;o=0!==h?7:0;break;case 3:for(;14>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}if(c=i=16383&f,(31&i)>29||(i>>5&31)>29)return o=9,t.Zt="too many length or distance symbols",e=-3,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);if(i=258+(31&i)+(i>>5&31),!r||r.length<i)r=[];else for(m=0;i>m;m++)r[m]=0;f>>>=14,y-=14,l=0,o=4;case 4:for(;4+(c>>>10)>l;){for(;3>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}r[vt[l++]]=7&f,f>>>=3,y-=3}for(;19>l;)r[vt[l++]]=0;if(u[0]=7,i=p.ae(r,u,a,d,t),0!=i)return-3==(e=i)&&(r=null,o=9),n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);l=0,o=5;case 5:for(;i=c,258+(31&i)+(i>>5&31)>l;){let s,w;for(i=u[0];i>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}if(i=d[3*(a[0]+(f&at[i]))+1],w=d[3*(a[0]+(f&at[i]))+2],16>w)f>>>=i,y-=i,r[l++]=w;else{for(m=18==w?7:w-14,s=18==w?11:3;i+m>y;){if(0===k)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);e=0,k--,f|=(255&t.pe(b++))<<y,y+=8}if(f>>>=i,y-=i,s+=f&at[m],f>>>=m,y-=m,m=l,i=c,m+s>258+(31&i)+(i>>5&31)||16==w&&1>m)return r=null,o=9,t.Zt="invalid bit length repeat",e=-3,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);w=16==w?r[m-1]:0;do{r[m++]=w}while(0!=--s);l=m}}if(a[0]=-1,A=[],C=[],V=[],B=[],A[0]=9,C[0]=6,i=c,i=p.we(257+(31&i),1+(i>>5&31),r,A,C,V,B,d,t),0!=i)return-3==i&&(r=null,o=9),e=i,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);w.init(A[0],C[0],d,V[0],d,B[0]),o=6;case 6:if(n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,1!=(e=w.be(n,t,e)))return n.ke(t,e);if(e=0,w.ge(t),b=t.le,k=t.Qt,f=n.he,y=n.de,g=n.write,v=g<n.read?n.read-g-1:n.end-g,0===h){o=0;break}o=7;case 7:if(n.write=g,e=n.ke(t,e),g=n.write,v=g<n.read?n.read-g-1:n.end-g,n.read!=n.write)return n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);o=8;case 8:return e=1,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);case 9:return e=-3,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e);default:return e=-2,n.he=f,n.de=y,t.Qt=k,t.te+=b-t.le,t.le=b,n.write=g,n.ke(t,e)}}},n.ge=t=>{n.reset(t,null),n.ye=null,d=null},n.me=(t,e,r)=>{n.ye.set(t.subarray(e,e+r),0),n.read=n.write=r},n.Se=()=>1==o?1:0}const St=[0,0,255,255];function zt(){const t=this;function e(t){return t&&t.ze?(t.te=t.ee=0,t.Zt=null,t.ze.mode=7,t.ze._e.reset(t,null),0):-2}t.mode=0,t.method=0,t.Ie=[0],t.Ae=0,t.marker=0,t.Ce=0,t.Ve=e=>(t._e&&t._e.ge(e),t._e=null,0),t.Be=(n,r)=>(n.Zt=null,t._e=null,8>r||r>15?(t.Ve(n),-2):(t.Ce=r,n.ze._e=new mt(n,1<<r),e(n),0)),t.it=(t,e)=>{let n,r;if(!t||!t.ze||!t.fe)return-2;const i=t.ze;for(e=4==e?-5:0,n=-5;;)switch(i.mode){case 0:if(0===t.Qt)return n;if(n=e,t.Qt--,t.te++,8!=(15&(i.method=t.pe(t.le++)))){i.mode=13,t.Zt="unknown compression method",i.marker=5;break}if(8+(i.method>>4)>i.Ce){i.mode=13,t.Zt="invalid win size",i.marker=5;break}i.mode=1;case 1:if(0===t.Qt)return n;if(n=e,t.Qt--,t.te++,r=255&t.pe(t.le++),((i.method<<8)+r)%31!=0){i.mode=13,t.Zt="incorrect header check",i.marker=5;break}if(0==(32&r)){i.mode=7;break}i.mode=2;case 2:if(0===t.Qt)return n;n=e,t.Qt--,t.te++,i.Ae=(255&t.pe(t.le++))<<24&4278190080,i.mode=3;case 3:if(0===t.Qt)return n;n=e,t.Qt--,t.te++,i.Ae+=(255&t.pe(t.le++))<<16&16711680,i.mode=4;case 4:if(0===t.Qt)return n;n=e,t.Qt--,t.te++,i.Ae+=(255&t.pe(t.le++))<<8&65280,i.mode=5;case 5:return 0===t.Qt?n:(n=e,t.Qt--,t.te++,i.Ae+=255&t.pe(t.le++),i.mode=6,2);case 6:return i.mode=13,t.Zt="need dictionary",i.marker=0,-2;case 7:if(n=i._e.be(t,n),-3==n){i.mode=13,i.marker=0;break}if(0==n&&(n=e),1!=n)return n;n=e,i._e.reset(t,i.Ie),i.mode=12;case 12:return t.Qt=0,1;case 13:return-3;default:return-2}},t.Ee=(t,e,n)=>{let r=0,i=n;if(!t||!t.ze||6!=t.ze.mode)return-2;const o=t.ze;return i<1<<o.Ce||(i=(1<<o.Ce)-1,r=n-i),o._e.me(e,r,i),o.mode=7,0},t.De=t=>{let n,r,i,o,s;if(!t||!t.ze)return-2;const f=t.ze;if(13!=f.mode&&(f.mode=13,f.marker=0),0===(n=t.Qt))return-5;for(r=t.le,i=f.marker;0!==n&&4>i;)t.pe(r)==St[i]?i++:i=0!==t.pe(r)?0:4-i,r++,n--;return t.te+=r-t.le,t.le=r,t.Qt=n,f.marker=i,4!=i?-3:(o=t.te,s=t.ee,e(t),t.te=o,t.ee=s,f.mode=7,0)},t.Ue=t=>t&&t.ze&&t.ze._e?t.ze._e.Se():-2}function _t(){}function It(t){const e=new _t,o=t&&t.rt?n.floor(2*t.rt):131072,s=new i(o);let f=!1;e.Be(),e.se=s,this.append=(t,n)=>{const c=[];let l,u,a=0,w=0,h=0;if(0!==t.length){e.le=0,e.fe=t,e.Qt=t.length;do{if(e.ue=0,e.ce=o,0!==e.Qt||f||(e.le=0,f=!0),l=e.it(0),f&&-5===l){if(0!==e.Qt)throw new r("inflating: bad input")}else if(0!==l&&1!==l)throw new r("inflating: "+e.Zt);if((f||1===l)&&e.Qt===t.length)throw new r("inflating: bad input");e.ue&&(e.ue===o?c.push(new i(s)):c.push(s.slice(0,e.ue))),h+=e.ue,n&&e.le>0&&e.le!=a&&(n(e.le),a=e.le)}while(e.Qt>0||0===e.ce);return c.length>1?(u=new i(h),c.forEach((t=>{u.set(t,w),w+=t.length}))):u=c[0]||new i(0),u}},this.flush=()=>{e.Ve()}}_t.prototype={Be:function(t){const e=this;return e.ze=new zt,t||(t=15),e.ze.Be(e,t)},it:function(t){const e=this;return e.ze?e.ze.it(e,t):-2},Ve:function(){const t=this;if(!t.ze)return-2;const e=t.ze.Ve(t);return t.ze=null,e},De:function(){const t=this;return t.ze?t.ze.De(t):-2},Ee:function(t,e){const n=this;return n.ze?n.ze.Ee(n,t,e):-2},pe:function(t){return this.fe[t]},Xt:function(t,e){return this.fe.subarray(t,t+e)}},self.initCodec=()=>{self.Deflate=ut,self.Inflate=It};\n'],{type:"text/javascript"}));t({workerScripts:{inflate:[e],deflate:[e]}})}};
 
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/util/stream-codec-shim.js
 
@@ -12637,10 +12420,6 @@ function createCodecClass(constructor, constructorOptions, registerDataHandler) 
 					codecAdapter.pendingData = new Uint8Array(data);
 				}
 			};
-			// eslint-disable-next-line no-prototype-builtins
-			if (options.hasOwnProperty("level") && options.level === undefined) {
-				delete options.level;
-			}
 			codecAdapter.codec = new constructor(Object.assign({}, constructorOptions, options));
 			registerDataHandler(codecAdapter.codec, onData);
 		}
@@ -12693,7 +12472,7 @@ function createCodecClass(constructor, constructorOptions, registerDataHandler) 
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* global Blob, FileReader, atob, btoa, XMLHttpRequest, document, fetch, ReadableStream, WritableStream */
+/* global Blob, FileReader, atob, btoa, XMLHttpRequest, document, fetch */
 
 const ERR_HTTP_STATUS = "HTTP error ";
 const ERR_HTTP_RANGE = "HTTP Range not supported";
@@ -12707,7 +12486,6 @@ const HTTP_HEADER_RANGE = "Range";
 const HTTP_METHOD_HEAD = "HEAD";
 const HTTP_METHOD_GET = "GET";
 const HTTP_RANGE_UNIT = "bytes";
-const DEFAULT_CHUNK_SIZE = 64 * 1024;
 
 class Stream {
 
@@ -12721,48 +12499,9 @@ class Stream {
 }
 
 class Reader extends Stream {
-
-	getStream({ offset, size, chunkSize } = { offset: 0, chunkSize: DEFAULT_CHUNK_SIZE }) {
-		const reader = this;
-		return new ReadableStream({
-			start() {
-				this.chunkOffset = 0;
-			},
-			async pull(controller) {
-				const { chunkOffset } = this;
-				controller.enqueue(await reader.readUint8Array(offset + chunkOffset, Math.min(chunkSize, size() - chunkOffset)));
-				if (chunkOffset + chunkSize > size()) {
-					controller.close();
-				} else {
-					this.chunkOffset += chunkSize;
-				}
-			}
-		});
-	}
 }
 
-class WriterStream extends Stream {
-	getStream() {
-		const writer = this;
-		return new WritableStream({
-			write(chunk) {
-				if (chunk && chunk.length) {
-					return writer.writeUint8Array(chunk);
-				}
-			}
-		});
-	}
-
-	getStreamWriter() {
-		const writer = this;
-		if (!writer.streamWriter) {
-			writer.streamWriter = writer.getStream().getWriter();
-		}
-		return writer.streamWriter;
-	}
-}
-
-class Writer extends WriterStream {
+class Writer extends Stream {
 
 	writeUint8Array(array) {
 		this.size += array.length;
@@ -12777,10 +12516,9 @@ class TextReader extends Reader {
 	}
 
 	init() {
-		const reader = this;
 		super.init();
-		reader.blobReader.init();
-		reader.size = reader.blobReader.size;
+		this.blobReader.init();
+		this.size = this.blobReader.size;
 	}
 
 	readUint8Array(offset, length) {
@@ -12802,15 +12540,14 @@ class TextWriter extends Writer {
 	}
 
 	getData() {
-		const writer = this;
-		if (writer.blob.text) {
-			return writer.blob.text();
+		if (this.blob.text) {
+			return this.blob.text();
 		} else {
 			const reader = new FileReader();
 			return new Promise((resolve, reject) => {
 				reader.onload = event => resolve(event.target.result);
 				reader.onerror = () => reject(reader.error);
-				reader.readAsText(writer.blob, writer.encoding);
+				reader.readAsText(this.blob, this.encoding);
 			});
 		}
 	}
@@ -12820,21 +12557,19 @@ class Data64URIReader extends Reader {
 
 	constructor(dataURI) {
 		super();
-		const reader = this;
-		reader.dataURI = dataURI;
+		this.dataURI = dataURI;
 		let dataEnd = dataURI.length;
 		while (dataURI.charAt(dataEnd - 1) == "=") {
 			dataEnd--;
 		}
-		reader.dataStart = dataURI.indexOf(",") + 1;
-		reader.size = Math.floor((dataEnd - reader.dataStart) * 0.75);
+		this.dataStart = dataURI.indexOf(",") + 1;
+		this.size = Math.floor((dataEnd - this.dataStart) * 0.75);
 	}
 
 	readUint8Array(offset, length) {
 		const dataArray = new Uint8Array(length);
 		const start = Math.floor(offset / 3) * 4;
-		const dataStart = this.dataStart;
-		const bytes = atob(this.dataURI.substring(start + dataStart, Math.ceil((offset + length) / 3) * 4 + dataStart));
+		const bytes = atob(this.dataURI.substring(start + this.dataStart, Math.ceil((offset + length) / 3) * 4 + this.dataStart));
 		const delta = offset - Math.floor(start / 4) * 3;
 		for (let indexByte = delta; indexByte < delta + length; indexByte++) {
 			dataArray[indexByte - delta] = bytes.charCodeAt(indexByte);
@@ -12853,21 +12588,20 @@ class Data64URIWriter extends Writer {
 
 	writeUint8Array(array) {
 		super.writeUint8Array(array);
-		const writer = this;
 		let indexArray = 0;
-		let dataString = writer.pending;
-		const delta = writer.pending.length;
-		writer.pending = "";
+		let dataString = this.pending;
+		const delta = this.pending.length;
+		this.pending = "";
 		for (indexArray = 0; indexArray < (Math.floor((delta + array.length) / 3) * 3) - delta; indexArray++) {
 			dataString += String.fromCharCode(array[indexArray]);
 		}
 		for (; indexArray < array.length; indexArray++) {
-			writer.pending += String.fromCharCode(array[indexArray]);
+			this.pending += String.fromCharCode(array[indexArray]);
 		}
 		if (dataString.length > 2) {
-			writer.data += btoa(dataString);
+			this.data += btoa(dataString);
 		} else {
-			writer.pending = dataString;
+			this.pending = dataString;
 		}
 	}
 
@@ -12885,15 +12619,14 @@ class BlobReader extends Reader {
 	}
 
 	async readUint8Array(offset, length) {
-		const reader = this;
-		if (reader.blob.arrayBuffer) {
-			return new Uint8Array(await reader.blob.slice(offset, offset + length).arrayBuffer());
+		if (this.blob.arrayBuffer) {
+			return new Uint8Array(await this.blob.slice(offset, offset + length).arrayBuffer());
 		} else {
 			const reader = new FileReader();
 			return new Promise((resolve, reject) => {
 				reader.onload = event => resolve(new Uint8Array(event.target.result));
 				reader.onerror = () => reject(reader.error);
-				reader.readAsArrayBuffer(reader.blob.slice(offset, offset + length));
+				reader.readAsArrayBuffer(this.blob.slice(offset, offset + length));
 			});
 		}
 	}
@@ -12910,23 +12643,21 @@ class BlobWriter extends Writer {
 
 	writeUint8Array(array) {
 		super.writeUint8Array(array);
-		const writer = this;
-		if (writer.arrayBuffers.length == writer.arrayBuffersMaxlength) {
-			flushArrayBuffers(writer);
+		if (this.arrayBuffers.length == this.arrayBuffersMaxlength) {
+			flushArrayBuffers(this);
 		}
-		writer.arrayBuffers.push(array.buffer);
+		this.arrayBuffers.push(array.buffer);
 	}
 
 	getData() {
-		const writer = this;
-		if (!writer.blob) {
-			if (writer.arrayBuffers.length) {
-				flushArrayBuffers(writer);
+		if (!this.blob) {
+			if (this.arrayBuffers.length) {
+				flushArrayBuffers(this);
 			}
-			writer.blob = writer.pendingBlob;
-			initArrayBuffers(writer);
+			this.blob = this.pendingBlob;
+			initArrayBuffers(this);
 		}
-		return writer.blob;
+		return this.blob;
 	}
 }
 
@@ -12944,16 +12675,58 @@ class ReadableStreamReader {
 
 	constructor(readableStream) {
 		this.readableStream = readableStream;
+		this.reader = readableStream.getReader();
 		this.size = Infinity;
+		this.index = 0;
+		this.currentSize = 0;
+		this.pendingValue = new Uint8Array();
 	}
 
-	init(size) {
-		this.size = size;
+	init() {
 		this.initialized = true;
 	}
 
-	getStream() {
-		return this.readableStream;
+	async readUint8Array(index, length) {
+		if (this.index != index) {
+			throw new Error(ERR_NOT_SEEKABLE_READER);
+		}
+		let data = new Uint8Array(length);
+		let size = 0, done;
+		do {
+			const result = await this.reader.read();
+			let { value } = result;
+			done = result.done;
+			if (value) {
+				this.currentSize += value.length;
+			} else {
+				value = this.pendingValue;
+				this.pendingValue = new Uint8Array();
+			}
+			if (this.pendingValue.length) {
+				const newValue = new Uint8Array(this.pendingValue.length + value.length);
+				newValue.set(this.pendingValue);
+				newValue.set(value, this.pendingValue.length);
+				this.pendingValue = new Uint8Array();
+				value = newValue;
+			}
+			if (size + value.length > length) {
+				data.set(value.subarray(0, length), size);
+				this.pendingValue = value.subarray(length);
+				size += length;
+			} else {
+				data.set(value, size);
+				size += value.length;
+			}
+		} while (size < length && !done);
+		if (done && this.size == Infinity) {
+			this.size = this.currentSize;
+		}
+		if (this.size < length) {
+			data = data.slice(0, this.size);
+			length = this.size;
+		}
+		this.index += length;
+		return data;
 	}
 }
 
@@ -12961,9 +12734,8 @@ class WritableStreamWriter extends Writer {
 
 	constructor(writableStream) {
 		super();
-		const writer = this;
-		writer.writableStream = writableStream;
-		writer.writer = writer.getStreamWriter();
+		this.writableStream = writableStream;
+		this.writer = writableStream.getWriter();
 	}
 
 	async writeUint8Array(array) {
@@ -12971,15 +12743,10 @@ class WritableStreamWriter extends Writer {
 		return this.writer.write(array);
 	}
 
-	getStream() {
-		return this.writableStream;
-	}
-
 	async getData() {
-		const writer = this;
-		await writer.writer.ready;
-		await writer.writer.close();
-		return writer.writableStream;
+		await this.writer.ready;
+		await this.writer.close();
+		return this.writableStream;
 	}
 }
 
@@ -12987,16 +12754,15 @@ class FetchReader extends Reader {
 
 	constructor(url, options) {
 		super();
-		const reader = this;
-		reader.url = url;
-		reader.preventHeadRequest = options.preventHeadRequest;
-		reader.useRangeHeader = options.useRangeHeader;
-		reader.forceRangeRequests = options.forceRangeRequests;
-		reader.options = Object.assign({}, options);
-		delete reader.options.preventHeadRequest;
-		delete reader.options.useRangeHeader;
-		delete reader.options.forceRangeRequests;
-		delete reader.options.useXHR;
+		this.url = url;
+		this.preventHeadRequest = options.preventHeadRequest;
+		this.useRangeHeader = options.useRangeHeader;
+		this.forceRangeRequests = options.forceRangeRequests;
+		this.options = Object.assign({}, options);
+		delete this.options.preventHeadRequest;
+		delete this.options.useRangeHeader;
+		delete this.options.forceRangeRequests;
+		delete this.options.useXHR;
 	}
 
 	async init() {
@@ -13013,12 +12779,11 @@ class XHRReader extends Reader {
 
 	constructor(url, options) {
 		super();
-		const reader = this;
-		reader.url = url;
-		reader.preventHeadRequest = options.preventHeadRequest;
-		reader.useRangeHeader = options.useRangeHeader;
-		reader.forceRangeRequests = options.forceRangeRequests;
-		reader.options = options;
+		this.url = url;
+		this.preventHeadRequest = options.preventHeadRequest;
+		this.useRangeHeader = options.useRangeHeader;
+		this.forceRangeRequests = options.forceRangeRequests;
+		this.options = options;
 	}
 
 	async init() {
@@ -13221,11 +12986,10 @@ class Uint8ArrayWriter extends Writer {
 
 	writeUint8Array(array) {
 		super.writeUint8Array(array);
-		const writer = this;
-		const previousArray = writer.array;
-		writer.array = new Uint8Array(previousArray.length + array.length);
-		writer.array.set(previousArray);
-		writer.array.set(array, previousArray.length);
+		const previousArray = this.array;
+		this.array = new Uint8Array(previousArray.length + array.length);
+		this.array.set(previousArray);
+		this.array.set(array, previousArray.length);
 	}
 
 	getData() {
@@ -13433,50 +13197,40 @@ function decodeText(value, encoding) {
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// const MINIMUM_CHUNK_SIZE = 64;
+const MINIMUM_CHUNK_SIZE = 64;
 const ERR_ABORT = "Abort error";
 
 
 
-async function processData(codec, reader, writer, size, { signal, onprogress }) {
-	let length = 0;
-	let chunkOffset = 0;
+async function processData(codec, reader, writer, offset, inputLengthGetter, config, options) {
+	const chunkSize = Math.max(config.chunkSize, MINIMUM_CHUNK_SIZE);
+	return processChunk();
 
-	const result = new Promise((resolve, reject) => {
-		codec.pull = async () => {
+	async function processChunk(chunkOffset = 0, outputLength = 0) {
+		const signal = options.signal;
+		const inputLength = inputLengthGetter();
+		if (chunkOffset < inputLength) {
 			testAborted(signal, codec);
-			const result = await reader.read();
-			chunkOffset += result.length;
-			return result;
-		};
-		codec.ondata = async ({ value, done }) => {
-			try {
-				testAborted(signal, codec);
-				const { data, signature } = value;
-				if (data && data.length) {
-					length += data.length;
-					await writer.ready;
-					await writer.write(data);
+			const inputData = await reader.readUint8Array(chunkOffset + offset, Math.min(chunkSize, inputLength - chunkOffset));
+			const chunkLength = inputData.length;
+			testAborted(signal, codec);
+			const data = await codec.append(inputData);
+			testAborted(signal, codec);
+			outputLength += await writeData(writer, data);
+			if (options.onprogress) {
+				try {
+					options.onprogress(chunkOffset + chunkLength, inputLength);
+				} catch (error) {
+					// ignored
 				}
-				if (onprogress) {
-					try {
-						onprogress(chunkOffset, size());
-					} catch (error) {
-						// ignored
-					}
-				}
-				if (done) {
-					await writer.ready;
-					resolve({ signature, length });
-				}
-			} catch (error) {
-				reject(error);
 			}
-		};
-		codec.onerror = reject;
-	});
-	await codec.start();
-	return result;
+			return processChunk(chunkOffset + chunkSize, outputLength);
+		} else {
+			const result = await codec.flush();
+			outputLength += await writeData(writer, result.data);
+			return { signature: result.signature, length: outputLength };
+		}
+	}
 }
 
 function testAborted(signal, codec) {
@@ -13484,6 +13238,13 @@ function testAborted(signal, codec) {
 		codec.abort();
 		throw new Error(ERR_ABORT);
 	}
+}
+
+async function writeData(writer, data) {
+	if (data.length) {
+		await writer.writeUint8Array(data);
+	}
+	return data.length;
 }
 ;// CONCATENATED MODULE: ./node_modules/@zip.js/zip.js/lib/core/zip-entry.js
 /*
@@ -13711,11 +13472,11 @@ class ZipReader {
 
 	async getEntries(options = {}) {
 		const entries = [];
-		const iterator = this.getEntriesGenerator(options);
-		let result = iterator.next();
-		while (!(await result).done) {
-			entries.push((await result).value);
-			result = iterator.next();
+		const iter = this.getEntriesGenerator(options);
+		let curr = iter.next();
+		while(!(await curr).done) {
+			entries.push((await curr).value);
+			curr = iter.next();
 		}
 		return entries;
 	}
@@ -13793,21 +13554,14 @@ class ZipEntry {
 			signature,
 			compressed: compressionMethod != 0,
 			encrypted,
-			useWebWorkers: getOptionValue(zipEntry, options, "useWebWorkers"),
-			useCompressionStream: getOptionValue(zipEntry, options, "useCompressionStream")
+			useWebWorkers: getOptionValue(zipEntry, options, "useWebWorkers")
 		}, config);
 		if (!writer.initialized) {
 			await writer.init();
 		}
 		const signal = getOptionValue(zipEntry, options, "signal");
 		const dataOffset = offset + 30 + localDirectory.filenameLength + localDirectory.extraFieldLength;
-		const size = () => compressedSize;
-		await processData(
-			codec,
-			reader.getStream({ offset: dataOffset, size, chunkSize: getChunkSize(config) }).getReader(),
-			writer.getStreamWriter(),
-			size,
-			{ onprogress: options.onprogress, signal });
+		await processData(codec, reader, writer, dataOffset, () => compressedSize, config, { onprogress: options.onprogress, signal });
 		return writer.getData();
 	}
 }
@@ -14250,7 +14004,7 @@ async function addFile(zipWriter, name, reader, options) {
 			await reader.init();
 		}
 		uncompressedSize = reader.size;
-		maximumCompressedSize = getMaximumCompressedSize(uncompressedSize);
+		maximumCompressedSize = zip_writer_getMaximumCompressedSize(uncompressedSize);
 	}
 	let zip64 = options.zip64 || zipWriter.options.zip64 || false;
 	if (zipWriter.offset + zipWriter.pendingCompressedSize >= MAX_32_BITS ||
@@ -14270,7 +14024,6 @@ async function addFile(zipWriter, name, reader, options) {
 	let dataDescriptor = zip_writer_getOptionValue(zipWriter, options, "dataDescriptor");
 	let dataDescriptorSignature = zip_writer_getOptionValue(zipWriter, options, "dataDescriptorSignature");
 	const signal = zip_writer_getOptionValue(zipWriter, options, "signal");
-	const useCompressionStream = zip_writer_getOptionValue(zipWriter, options, "useCompressionStream");
 	if (dataDescriptor === undefined) {
 		dataDescriptor = true;
 	}
@@ -14300,8 +14053,7 @@ async function addFile(zipWriter, name, reader, options) {
 		signal,
 		msDosCompatible,
 		internalFileAttribute,
-		externalFileAttribute,
-		useCompressionStream
+		externalFileAttribute
 	}));
 	if (maximumCompressedSize) {
 		zipWriter.pendingCompressedSize -= maximumCompressedSize;
@@ -14311,8 +14063,8 @@ async function addFile(zipWriter, name, reader, options) {
 }
 
 async function getFileEntry(zipWriter, name, reader, options) {
-	const { files, writer } = zipWriter;
-	const streamWriter = writer.getStreamWriter();
+	const files = zipWriter.files;
+	const writer = zipWriter.writer;
 	const previousFileEntry = Array.from(files.values()).pop();
 	let fileEntry = {};
 	let bufferedWrite;
@@ -14338,7 +14090,7 @@ async function getFileEntry(zipWriter, name, reader, options) {
 			}
 			fileWriter = writer;
 		}
-		fileEntry = await createFileEntry(reader, fileWriter.getStreamWriter(), zipWriter.config, options);
+		fileEntry = await createFileEntry(reader, fileWriter, zipWriter.config, options);
 		fileEntry.lock = lockCurrentFileEntry;
 		files.set(name, fileEntry);
 		fileEntry.filename = name;
@@ -14368,10 +14120,10 @@ async function getFileEntry(zipWriter, name, reader, options) {
 					zip_writer_setUint32(arrayBufferView, 18, fileEntry.compressedSize);
 					zip_writer_setUint32(arrayBufferView, 22, fileEntry.uncompressedSize);
 				}
-				await writeUint8Array(streamWriter, new Uint8Array(arrayBuffer));
+				await writer.writeUint8Array(new Uint8Array(arrayBuffer));
 				indexWrittenData = headerLength;
 			}
-			await writeBlob(streamWriter, blob, indexWrittenData);
+			await writeBlob(writer, blob, indexWrittenData);
 			delete fileEntry.writingBufferedData;
 		}
 		fileEntry.offset = zipWriter.offset;
@@ -14400,7 +14152,7 @@ async function getFileEntry(zipWriter, name, reader, options) {
 	}
 }
 
-async function createFileEntry(reader, streamWriter, config, options) {
+async function createFileEntry(reader, writer, config, options) {
 	const {
 		rawFilename,
 		lastAccessDate,
@@ -14423,8 +14175,7 @@ async function createFileEntry(reader, streamWriter, config, options) {
 		extendedTimestamp,
 		msDosCompatible,
 		internalFileAttribute,
-		externalFileAttribute,
-		useCompressionStream
+		externalFileAttribute
 	} = options;
 	const encrypted = Boolean(password && password.length);
 	const compressed = level !== 0 && !directory;
@@ -14557,22 +14308,15 @@ async function createFileEntry(reader, streamWriter, config, options) {
 			signed: true,
 			compressed,
 			encrypted,
-			useWebWorkers,
-			useCompressionStream
+			useWebWorkers
 		}, config);
-		await writeUint8Array(streamWriter, localHeaderArray);
+		await writer.writeUint8Array(localHeaderArray);
 		fileEntry.dataWritten = true;
-		const size = () => reader.size;
-		result = await processData(
-			codec,
-			reader.getStream({ offset: 0, size, chunkSize: getChunkSize(config) }).getReader(),
-			streamWriter,
-			() => reader.size,
-			{ onprogress, signal });
+		result = await processData(codec, reader, writer, 0, () => reader.size, config, { onprogress, signal });
 		uncompressedSize = fileEntry.uncompressedSize = reader.size;
 		compressedSize = result.length;
 	} else {
-		await writeUint8Array(streamWriter, localHeaderArray);
+		await writer.writeUint8Array(localHeaderArray);
 		fileEntry.dataWritten = true;
 	}
 	let dataDescriptorArray = new Uint8Array(0);
@@ -14616,7 +14360,7 @@ async function createFileEntry(reader, streamWriter, config, options) {
 		}
 	}
 	if (dataDescriptor) {
-		await writeUint8Array(streamWriter, dataDescriptorArray);
+		await writer.writeUint8Array(dataDescriptorArray);
 	}
 	const length = localHeaderArray.length + compressedSize + dataDescriptorArray.length;
 	Object.assign(fileEntry, { compressedSize, lastModDate, rawLastModDate, creationDate, lastAccessDate, encrypted, length });
@@ -14624,8 +14368,8 @@ async function createFileEntry(reader, streamWriter, config, options) {
 }
 
 async function closeFile(zipWriter, comment, options) {
-	const { files } = zipWriter;
-	const streamWriter = zipWriter.writer.getStreamWriter();
+	const writer = zipWriter.writer;
+	const files = zipWriter.files;
 	let offset = 0;
 	let directoryDataLength = 0;
 	let directoryOffset = zipWriter.offset;
@@ -14740,9 +14484,9 @@ async function closeFile(zipWriter, comment, options) {
 	setUint16(directoryView, offset + 10, filesLength);
 	zip_writer_setUint32(directoryView, offset + 12, directoryDataLength);
 	zip_writer_setUint32(directoryView, offset + 16, directoryOffset);
-	await writeUint8Array(streamWriter, directoryArray);
+	await writer.writeUint8Array(directoryArray);
 	if (comment && comment.length) {
-		await writeUint8Array(streamWriter, comment);
+		await writer.writeUint8Array(comment);
 	}
 }
 
@@ -14763,23 +14507,18 @@ function sliceAsArrayBuffer(blob, start, end) {
 	}
 }
 
-async function writeBlob(streamWriter, blob, start = 0) {
+async function writeBlob(writer, blob, start = 0) {
 	const blockSize = 512 * 1024 * 1024;
 	await writeSlice();
 
 	async function writeSlice() {
 		if (start < blob.size) {
 			const arrayBuffer = await sliceAsArrayBuffer(blob, start, start + blockSize);
-			await writeUint8Array(streamWriter, new Uint8Array(arrayBuffer));
+			await writer.writeUint8Array(new Uint8Array(arrayBuffer));
 			start += blockSize;
 			await writeSlice();
 		}
 	}
-}
-
-async function writeUint8Array(streamWriter, array) {
-	await streamWriter.ready;
-	await streamWriter.write(array);
 }
 
 function getTimeNTFS(date) {
@@ -14792,7 +14531,7 @@ function zip_writer_getOptionValue(zipWriter, options, name) {
 	return options[name] === undefined ? zipWriter.options[name] : options[name];
 }
 
-function getMaximumCompressedSize(uncompressedSize) {
+function zip_writer_getMaximumCompressedSize(uncompressedSize) {
 	return uncompressedSize + (5 * (Math.floor(uncompressedSize / 16383) + 1));
 }
 
@@ -15449,7 +15188,7 @@ try {
 	// ignored
 }
 configure({ baseURL });
-e(configure);
+t(configure);
 
 
 
