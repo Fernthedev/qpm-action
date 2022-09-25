@@ -144,7 +144,9 @@ function downloadQpm(octokit, token) {
             }
             return Promise.resolve();
         }));
-        return path.join(cachedPath, 'qpm-rust');
+        const execFile = path.join(cachedPath, 'qpm-rust');
+        yield (0, utils_1.githubExecAsync)(`chmod +x ${execFile}`);
+        return execFile;
     });
 }
 function run() {

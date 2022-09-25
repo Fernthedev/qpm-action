@@ -76,7 +76,10 @@ async function downloadQpm(
   })
 
 
-  return path.join(cachedPath, 'qpm-rust')
+  const execFile = path.join(cachedPath, 'qpm-rust')
+  await githubExecAsync(`chmod +x ${execFile}`)
+
+  return execFile
 }
 
 async function run(): Promise<void> {
