@@ -13,14 +13,17 @@ export interface QPMPackage {
       branchName?: string
       headersOnly?: boolean
       overrideSoName?: string
-      overrideDebugSoName?: string
+      overrideDebugSoName?: string,
+      soLink?: string,
+      debugSoLink?: string,
+      modLink?: string
     }
   }
 }
 
-export async function readQPM(
+export async function readQPM<T extends QPMPackage | QPMSharedPackage>(
   file: fs.PathOrFileDescriptor
-): Promise<QPMPackage | QPMSharedPackage> {
+): Promise<T> {
   const fileData: string = await new Promise((resolve, reject) => {
     fs.readFile(file, undefined, (err, data) => {
       if (err) {
