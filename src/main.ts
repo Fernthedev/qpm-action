@@ -79,10 +79,10 @@ async function run(): Promise<void> {
     const {restore, token} = getActionParameters()
 
     const octokit = github.getOctokit(token)
-    const qpm_exec = await downloadQpm(octokit, token)
+    await downloadQpm(octokit, token)
 
     const cachePathOutput = (
-      await githubExecAsync(`${qpm_exec} ${QPM_COMMAND_CACHE_PATH}`)
+      await githubExecAsync(`qpm-rust ${QPM_COMMAND_CACHE_PATH}`)
     ).stdout
 
     // Config path is: E:\SSDUse\AppData\QPM_Temp
@@ -95,7 +95,7 @@ async function run(): Promise<void> {
     const cacheKey = await cache.restoreCache(paths, key, restoreKeys)
 
     if (restore) {
-      await githubExecAsync(`${qpm_exec} ${QPM_COMMAND_RESTORE}`)
+      await githubExecAsync(`qpm-rust ${QPM_COMMAND_RESTORE}`)
     }
 
     await cache.saveCache(paths, cacheKey ?? key)

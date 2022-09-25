@@ -10865,12 +10865,12 @@ function doPublish(octokit, release, debug, qmod, version) {
 }
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
-        const { publish, token, qpmPath, qpmDebugBin, qpmQmod, qpmReleaseBin } = (0, utils_1.getActionParameters)();
+        const { publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin } = (0, utils_1.getActionParameters)();
         if (!publish)
             return;
         const octokit = github.getOctokit(token);
         yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod);
-        (0, utils_1.githubExecAsync)(`${qpmPath} ${const_1.QPM_COMMAND_PUBLISH}`);
+        (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH}`);
     });
 }
 run();
@@ -11025,13 +11025,12 @@ function stringOrUndefined(str) {
     return str.trim() === '' ? undefined : str;
 }
 function getActionParameters() {
-    var _a, _b;
+    var _a;
     const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
     const version = stringOrUndefined(core.getInput('version'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
     const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
-    const qpmPath = (_b = stringOrUndefined(core.getInput('qpm_json'))) !== null && _b !== void 0 ? _b : 'qpm.json';
     const cache = core.getBooleanInput('cache');
     const cacheLockfile = core.getBooleanInput('cache_lockfile');
     const restore = core.getBooleanInput('restore');
@@ -11044,7 +11043,6 @@ function getActionParameters() {
         qpmDebugBin,
         qpmReleaseBin,
         qpmQmod,
-        qpmPath,
         token: myToken,
         publish,
         version,

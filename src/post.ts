@@ -120,7 +120,7 @@ async function doPublish(
 }
 
 async function run(): Promise<void> {
-  const {publish, token, qpmPath, qpmDebugBin, qpmQmod, qpmReleaseBin} =
+  const {publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin} =
     getActionParameters()
 
   if (!publish) return
@@ -129,7 +129,7 @@ async function run(): Promise<void> {
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod)
 
-  githubExecAsync(`${qpmPath} ${QPM_COMMAND_PUBLISH}`)
+  githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH}`)
 }
 
 run()

@@ -17,9 +17,6 @@ inputs:
     required: false
     description: 'Specifies if the action should use caches with qpm.shared.json'
     default: 'true'
-  qpm_json:
-    required: false
-    description: 'Specifies the path for qpm.json'
   qpm_release_bin:
     required: false
     description: 'Specifies the path for the release binary or debug if not specified'

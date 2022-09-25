@@ -40,8 +40,6 @@ export function getActionParameters() {
   const qpmDebugBin = core.getBooleanInput('qpm_debug_bin')
   const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'))
 
-  const qpmPath = stringOrUndefined(core.getInput('qpm_json')) ?? 'qpm.json'
-
   const cache = core.getBooleanInput('cache')
   const cacheLockfile = core.getBooleanInput('cache_lockfile') 
   const restore = core.getBooleanInput('restore')
@@ -56,7 +54,6 @@ export function getActionParameters() {
     qpmDebugBin,
     qpmReleaseBin,
     qpmQmod,
-    qpmPath,
     token: myToken,
     publish,
     version,
