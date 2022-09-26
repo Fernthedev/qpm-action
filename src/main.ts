@@ -100,7 +100,7 @@ async function run(): Promise<void> {
       // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
       const cachePath = cachePathOutput
         .split('Config path is: ')[1]
-        .substring(1) // substring to ignore fancy color
+        // .substring(2) // substring to ignore fancy color
         .trim()
 
       paths = [cachePath]

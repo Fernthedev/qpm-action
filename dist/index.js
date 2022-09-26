@@ -164,7 +164,7 @@ function run() {
                 // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
                 const cachePath = cachePathOutput
                     .split('Config path is: ')[1]
-                    .substring(1) // substring to ignore fancy color
+                    // .substring(2) // substring to ignore fancy color
                     .trim();
                 paths = [cachePath];
                 const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-'];
@@ -231,11 +231,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getActionParameters = exports.githubExecAsync = exports.execAsync = exports.getReleaseDownloadLink = void 0;
 const child_process_1 = __nccwpck_require__(3129);
 const exec_1 = __nccwpck_require__(1514);
 const core = __importStar(__nccwpck_require__(2186));
+const strip_ansi_1 = __importDefault(__nccwpck_require__(8926));
 function getReleaseDownloadLink(user, repo, version) {
     return `https://github.com/${user}/${repo}/releases/download/${version}`;
 }
@@ -257,7 +261,10 @@ function execAsync(command) {
 exports.execAsync = execAsync;
 function githubExecAsync(command) {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield (0, exec_1.getExecOutput)(command);
+        const output = yield (0, exec_1.getExecOutput)(command);
+        output.stdout = (0, strip_ansi_1.default)(output.stdout);
+        output.stderr = (0, strip_ansi_1.default)(output.stderr);
+        return output;
     });
 }
 exports.githubExecAsync = githubExecAsync;
@@ -56396,6 +56403,42 @@ function coerce (version, options) {
 
 /***/ }),
 
+/***/ 8926:
+/***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __nccwpck_require__) => {
+
+"use strict";
+// ESM COMPAT FLAG
+__nccwpck_require__.r(__webpack_exports__);
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "default": () => (/* binding */ stripAnsi)
+});
+
+;// CONCATENATED MODULE: ./node_modules/strip-ansi/node_modules/ansi-regex/index.js
+function ansiRegex({onlyFirst = false} = {}) {
+	const pattern = [
+	    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
+		'(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
+	].join('|');
+
+	return new RegExp(pattern, onlyFirst ? undefined : 'g');
+}
+
+;// CONCATENATED MODULE: ./node_modules/strip-ansi/index.js
+
+
+function stripAnsi(string) {
+	if (typeof string !== 'string') {
+		throw new TypeError(`Expected a \`string\`, got \`${typeof string}\``);
+	}
+
+	return string.replace(ansiRegex(), '');
+}
+
+
+/***/ }),
+
 /***/ 7372:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -66046,6 +66089,34 @@ module.exports = require("zlib");
 /******/ 	}
 /******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__nccwpck_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__nccwpck_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";

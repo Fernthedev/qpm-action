@@ -1,6 +1,7 @@
 import {exec} from 'child_process'
 import {getExecOutput as githubExec} from '@actions/exec'
 import * as core from '@actions/core'
+import stripAnsi from 'strip-ansi'
 
 
 export function getReleaseDownloadLink(
@@ -23,7 +24,10 @@ export async function execAsync(command: string) {
   })
 }
 export async function githubExecAsync(command: string) {
-  return await githubExec(command)
+  const output = await githubExec(command)
+  output.stdout = stripAnsi(output.stdout)
+  output.stderr = stripAnsi(output.stderr)
+  return output
 }
 
 function stringOrUndefined(str: string): string | undefined {
