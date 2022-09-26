@@ -68,13 +68,12 @@ async function downloadQpm(
   core.addPath(cachedPath)
   core.debug(`Added ${cachedPath} to path`)
 
-  await core.group("cache files", async () => {
+  await core.group('cache files', async () => {
     for (const file of fs.readdirSync(cachedPath)) {
       core.debug(`${file} ${fs.statSync(path.join(cachedPath, file)).isFile()}`)
     }
     return Promise.resolve()
   })
-
 
   const execFile = path.join(cachedPath, 'qpm-rust')
   await githubExecAsync(`chmod +x ${execFile}`)
@@ -84,8 +83,8 @@ async function downloadQpm(
 
 async function run(): Promise<void> {
   try {
-    const {restore, token} = getActionParameters()
-
+    const parameters = getActionParameters()
+    const {restore, token} = parameters
     const octokit = github.getOctokit(token)
     const qpmRustPath = await downloadQpm(octokit, token)
 
@@ -93,21 +92,29 @@ async function run(): Promise<void> {
       await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)
     ).stdout
 
-    // Config path is: E:\SSDUse\AppData\QPM_Temp
-    const cachePath = path.normalize(cachePathOutput.split('Config path is: ')[1])
-
-    const paths = [cachePath]
+    let paths: string[] = []
+    let cacheKey: string | undefined
     const key = 'qpm-cache'
-    const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
 
-    const cacheKey = await cache.restoreCache(paths, key, restoreKeys)
+    if (parameters.cache) {
+      // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
+      const cachePath = cachePathOutput
+        .split('Config path is: ')[1]
+        .substring(1) // substring to ignore fancy color
+        .trim()
+
+      paths = [cachePath]
+      const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
+      cacheKey = await cache.restoreCache(paths, key, restoreKeys)
+    }
 
     if (restore) {
       await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_RESTORE}`)
     }
 
-    await cache.saveCache(paths, cacheKey ?? key)
-
+    if (parameters.cache) {
+      await cache.saveCache(paths, cacheKey ?? key)
+    }
     // const ms: string = core.getInput('milliseconds')
     // core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
     // core.debug(new Date().toTimeString())
