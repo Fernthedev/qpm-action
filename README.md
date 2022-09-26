@@ -7,7 +7,7 @@
 Usage: 
 ```yaml
 - name: QPM Rust Action
-  uses: Fernthedev/qpm-rust-action@0.1.1
+  uses: Fernthedev/qpm-rust-action@0.1
     #required
     workflow_token: ${{secrets.GITHUB_TOKEN}}
     
