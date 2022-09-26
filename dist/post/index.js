@@ -10901,11 +10901,11 @@ function doPublish(octokit, release, debug, qmod, version) {
 }
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
-        const { publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin } = (0, utils_1.getActionParameters)();
+        const { publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version } = (0, utils_1.getActionParameters)();
         if (!publish)
             return;
         const octokit = github.getOctokit(token);
-        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod);
+        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
         (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH}`);
     });
 }

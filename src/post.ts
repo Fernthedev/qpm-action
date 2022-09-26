@@ -120,14 +120,14 @@ async function doPublish(
 }
 
 async function run(): Promise<void> {
-  const {publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin} =
+  const {publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version} =
     getActionParameters()
 
   if (!publish) return
 
   const octokit = github.getOctokit(token)
 
-  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod)
+  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version)
 
   githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH}`)
 }
