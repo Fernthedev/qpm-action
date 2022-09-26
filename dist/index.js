@@ -157,7 +157,7 @@ function run() {
             const qpmRustPath = yield downloadQpm(octokit, token);
             const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
             // Config path is: E:\SSDUse\AppData\QPM_Temp
-            const cachePath = cachePathOutput.split('Config path is: ')[1];
+            const cachePath = path.normalize(cachePathOutput.split('Config path is: ')[1]);
             const paths = [cachePath];
             const key = 'qpm-cache';
             const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-'];

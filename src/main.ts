@@ -94,7 +94,7 @@ async function run(): Promise<void> {
     ).stdout
 
     // Config path is: E:\SSDUse\AppData\QPM_Temp
-    const cachePath = cachePathOutput.split('Config path is: ')[1]
+    const cachePath = path.normalize(cachePathOutput.split('Config path is: ')[1])
 
     const paths = [cachePath]
     const key = 'qpm-cache'
