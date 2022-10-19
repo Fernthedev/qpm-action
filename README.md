@@ -15,6 +15,7 @@ Usage:
     cache: true #will cache dependencies
     
     publish: true # Will publish the package at the end of the action run
+    publish_token: ${{secrets.QPM_TOKEN}} # Token required for authorization publish to qpackages.com
     version: "1.0.0" # defaults to qpm-rust version, do not include v
     
     # set to true if applicable, ASSUMES the file is already a relaease asset
