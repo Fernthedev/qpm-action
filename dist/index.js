@@ -275,6 +275,7 @@ function getActionParameters() {
     var _a;
     const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
     const version = stringOrUndefined(core.getInput('version'));
+    const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
     const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
@@ -295,7 +296,8 @@ function getActionParameters() {
         version,
         cache,
         cacheLockfile,
-        restore
+        restore,
+        publishToken
     };
 }
 exports.getActionParameters = getActionParameters;
