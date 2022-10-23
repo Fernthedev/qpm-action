@@ -35,6 +35,9 @@ inputs:
   workflow_token:
     required: false
     description: 'Specifies the workflow Github Secret Token required for some functionality'
+  publish_token:
+    required: false
+    description: 'The token required for publishing to qpackages.com'
 runs:
   using: 'node16'
   main: 'dist/index.js'
