@@ -16,6 +16,7 @@ import {
 } from './const'
 import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
+import {QPMPackage, readQPM, writeQPM} from './qpmf'
 
 async function downloadQpm(
   octokit: InstanceType<typeof GitHub>,
@@ -114,6 +115,12 @@ async function run(): Promise<void> {
 
     if (parameters.cache) {
       await cache.saveCache(paths, cacheKey ?? key)
+    }
+
+    if (parameters.version) {
+      const qpm = await readQPM<QPMPackage>('./qpm.json')
+      qpm.info.version = parameters.version
+      writeQPM('qpm.json', qpm)
     }
     // const ms: string = core.getInput('milliseconds')
     // core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
