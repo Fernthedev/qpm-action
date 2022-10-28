@@ -20,7 +20,7 @@ async function doPublish(
   version?: string
 ): Promise<void> {
   core.info("Publishing")
-  const qpmSharedPath = 'qpm.shared.json';
+  const qpmSharedPath = 'qpm.shared.json'
   // path.join(
   //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   //   process.env.GITHUB_WORKSPACE!,
@@ -155,26 +155,15 @@ async function doPublish(
   // do github stuff
 }
 
-export async function publishRun(onlyIfEager: boolean): Promise<void> {
+export async function publishRun(params: ReturnType<typeof getActionParameters>): Promise<void> {
   const {
-    publish,
-    eagerPublish,
     token,
     qpmDebugBin,
     qpmQmod,
     qpmReleaseBin,
     version,
     publishToken
-  } = getActionParameters()
-
-  if (onlyIfEager) {
-    if (!eagerPublish) return
-  } else {
-    if (!publish) return
-  }
-
-  // run publish at action end if eagerPublish and onlyIfEager are true
-  if (publish && eagerPublish && !onlyIfEager) return
+  } = params
 
   const octokit = github.getOctokit(token)
 
@@ -187,4 +176,7 @@ export async function publishRun(onlyIfEager: boolean): Promise<void> {
   }
 }
 
-publishRun(false)
+const parameters = getActionParameters()
+if (parameters.publish) {
+  publishRun(parameters)
+}

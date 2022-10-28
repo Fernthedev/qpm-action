@@ -10922,20 +10922,9 @@ function doPublish(octokit, release, debug, qmod, version) {
         yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref, sha: commit.data.sha }));
     });
 }
-function publishRun(onlyIfEager) {
+function publishRun(params) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { publish, eagerPublish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = (0, utils_1.getActionParameters)();
-        if (onlyIfEager) {
-            if (!eagerPublish)
-                return;
-        }
-        else {
-            if (!publish)
-                return;
-        }
-        // run publish at action end if eagerPublish and onlyIfEager are true
-        if (publish && eagerPublish && !onlyIfEager)
-            return;
+        const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = params;
         const octokit = github.getOctokit(token);
         yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
         if (publishToken) {
@@ -10947,7 +10936,10 @@ function publishRun(onlyIfEager) {
     });
 }
 exports.publishRun = publishRun;
-publishRun(false);
+const parameters = (0, utils_1.getActionParameters)();
+if (parameters.publish) {
+    publishRun(parameters);
+}
 
 
 /***/ }),

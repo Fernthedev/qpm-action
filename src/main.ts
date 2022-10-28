@@ -130,7 +130,7 @@ async function run(): Promise<void> {
     // core.setOutput('time', new Date().toTimeString())
 
     if (parameters.eagerPublish) {
-      publishRun(true)
+      publishRun(parameters)
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
