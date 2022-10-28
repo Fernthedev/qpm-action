@@ -129,7 +129,9 @@ async function run(): Promise<void> {
     // core.debug(new Date().toTimeString())
     // core.setOutput('time', new Date().toTimeString())
 
-    publishRun(true)
+    if (parameters.eagerPublish) {
+      publishRun(true)
+    }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
     core.isDebug

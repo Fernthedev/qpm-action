@@ -188,7 +188,9 @@ function run() {
             // core.debug(new Date().toTimeString())
             // core.debug(new Date().toTimeString())
             // core.setOutput('time', new Date().toTimeString())
-            (0, post_1.publishRun)(true);
+            if (parameters.eagerPublish) {
+                (0, post_1.publishRun)(true);
+            }
         }
         catch (error) {
             if (error instanceof Error)
