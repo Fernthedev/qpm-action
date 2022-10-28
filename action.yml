@@ -2,9 +2,13 @@ name: 'QPM Rust Action'
 description: 'Provides utilities for qpm-rust CI'
 author: 'Fernthedev'
 inputs:
-  publish: # change this
+  publish:
     required: false
     description: 'Denotes if this will publish to QPM qpackages.com'
+    default: 'false'
+  eager_publish:
+    required: false
+    description: 'Publishes at end of action rather than at end of workflow'
     default: 'false'
   version:
     required: false

@@ -109,6 +109,7 @@ const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const utils_1 = __nccwpck_require__(918);
 const qpmf_1 = __nccwpck_require__(3072);
+const post_1 = __nccwpck_require__(95);
 function downloadQpm(octokit, token) {
     return __awaiter(this, void 0, void 0, function* () {
         const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
@@ -187,6 +188,7 @@ function run() {
             // core.debug(new Date().toTimeString())
             // core.debug(new Date().toTimeString())
             // core.setOutput('time', new Date().toTimeString())
+            (0, post_1.publishRun)(true);
         }
         catch (error) {
             if (error instanceof Error)
@@ -196,6 +198,149 @@ function run() {
     });
 }
 run();
+
+
+/***/ }),
+
+/***/ 95:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.publishRun = void 0;
+const utils_1 = __nccwpck_require__(918);
+const core = __importStar(__nccwpck_require__(2186));
+const github = __importStar(__nccwpck_require__(5438));
+const path = __importStar(__nccwpck_require__(5622));
+const process = __importStar(__nccwpck_require__(1765));
+const qpmf_1 = __nccwpck_require__(3072);
+const const_1 = __nccwpck_require__(6695);
+function doPublish(octokit, release, debug, qmod, version) {
+    var _a, _b;
+    return __awaiter(this, void 0, void 0, function* () {
+        const qpmSharedPath = path.join(
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        process.env.GITHUB_WORKSPACE, 'qpm.shared.json');
+        const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
+        if (version) {
+            qpmFile.config.info.version = version;
+        }
+        version !== null && version !== void 0 ? version : (version = qpmFile.config.info.version);
+        const branch = `version-${version}`;
+        qpmFile.config.info.additionalData.branchName = branch;
+        const additionalData = qpmFile.config.info.additionalData;
+        const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, version);
+        if (release) {
+            const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace('.', '_')}.so`;
+            qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
+        }
+        if (debug) {
+            const name = (_b = additionalData.debugSoLink) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace('.', '_')}.so`;
+            qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
+        }
+        if (qmod) {
+            qpmFile.config.info.additionalData.modLink = `${download}/${qmod}`;
+        }
+        yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
+        const git = octokit.rest.git;
+        const lastCommitSha = github.context.sha;
+        const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
+        // create commit
+        // const blob = await git.createBlob({
+        //   ...github.context.repo,
+        //   content: JSON.stringify(qpmFile)
+        // })
+        const blobTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
+                {
+                    content: JSON.stringify(qpmFile),
+                    path: qpmSharedPath
+                }
+            ], base_tree: lastCommit.data.tree.sha }));
+        const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            tree: blobTree.data.tree[0].sha }));
+        git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: github.context.ref, sha: commit.data.sha }));
+        // create tag
+        const tag = yield git.createTag(Object.assign(Object.assign({}, github.context.repo), { tag: version, message: 'Version', object: commit.data.sha, type: 'commit' }));
+        const tagRef = `refs/tags/${version}`;
+        try {
+            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref: tagRef }));
+        }
+        catch (e) {
+            core.warning(`Deleting existing tag failed due to ${e}`);
+        }
+        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: tagRef, sha: tag.data.sha }));
+        // create branch
+        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+        const ref = `refs/heads/${branch}`;
+        try {
+            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref }));
+        }
+        catch (e) {
+            core.warning(`Deleting existing branch failed due to ${e}`);
+        }
+        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref, sha: commit.data.sha }));
+    });
+}
+function publishRun(onlyIfEager) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { publish, eagerPublish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = (0, utils_1.getActionParameters)();
+        if (onlyIfEager) {
+            if (!eagerPublish)
+                return;
+        }
+        else {
+            if (!publish)
+                return;
+        }
+        // run publish at action end if eagerPublish and onlyIfEager are true
+        if (publish && eagerPublish && !onlyIfEager)
+            return;
+        const octokit = github.getOctokit(token);
+        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
+        if (publishToken) {
+            (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH} --token ${publishToken}`);
+        }
+        else {
+            (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH}`);
+        }
+    });
+}
+exports.publishRun = publishRun;
+publishRun(false);
 
 
 /***/ }),
@@ -354,8 +499,9 @@ function stringOrUndefined(str) {
     return str.trim() === '' ? undefined : str;
 }
 function getActionParameters() {
-    var _a;
+    var _a, _b;
     const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
+    const eagerPublish = (_b = core.getBooleanInput('eager_publish')) !== null && _b !== void 0 ? _b : false;
     const version = stringOrUndefined(core.getInput('version'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
@@ -379,7 +525,8 @@ function getActionParameters() {
         cache,
         cacheLockfile,
         restore,
-        publishToken
+        publishToken,
+        eagerPublish
     };
 }
 exports.getActionParameters = getActionParameters;
@@ -66073,6 +66220,14 @@ module.exports = require("os");
 
 "use strict";
 module.exports = require("path");
+
+/***/ }),
+
+/***/ 1765:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("process");
 
 /***/ }),
 

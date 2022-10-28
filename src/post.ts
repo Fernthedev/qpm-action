@@ -70,16 +70,33 @@ async function doPublish(
 
   const git = octokit.rest.git
 
-  // create commit
-  const blob = await git.createBlob({
+  const lastCommitSha = github.context.sha
+  const lastCommit = await git.getCommit({
     ...github.context.repo,
-    content: JSON.stringify(qpmFile)
+    commit_sha: lastCommitSha
+  })
+
+  // create commit
+  // const blob = await git.createBlob({
+  //   ...github.context.repo,
+  //   content: JSON.stringify(qpmFile)
+  // })
+  const blobTree = await git.createTree({
+    ...github.context.repo,
+    tree: [
+      {
+        content: JSON.stringify(qpmFile),
+        path: qpmSharedPath
+      }
+    ],
+    base_tree: lastCommit.data.tree.sha
   })
   const commit = await git.createCommit({
     ...github.context.repo,
-    parents: [github.context.ref],
+    parents: [lastCommitSha],
     message: 'Update version and post restore',
-    tree: blob.data.sha // ?
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    tree: blobTree.data.tree[0].sha!!
   })
 
   git.updateRef({
@@ -89,12 +106,29 @@ async function doPublish(
   })
 
   // create tag
-  await git.createTag({
+  const tag = await git.createTag({
     ...github.context.repo,
     tag: version,
     message: 'Version',
     object: commit.data.sha,
     type: 'commit'
+  })
+
+  const tagRef = `refs/tags/${version}`
+
+  try {
+    await git.deleteRef({
+      ...github.context.repo,
+      ref: tagRef
+    })
+  } catch (e) {
+    core.warning(`Deleting existing tag failed due to ${e}`)
+  }
+
+  await git.createRef({
+    ...github.context.repo,
+    ref: tagRef,
+    sha: tag.data.sha
   })
 
   // create branch
@@ -119,11 +153,26 @@ async function doPublish(
   // do github stuff
 }
 
-async function run(): Promise<void> {
-  const {publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken} =
-    getActionParameters()
+export async function publishRun(onlyIfEager: boolean): Promise<void> {
+  const {
+    publish,
+    eagerPublish,
+    token,
+    qpmDebugBin,
+    qpmQmod,
+    qpmReleaseBin,
+    version,
+    publishToken
+  } = getActionParameters()
 
-  if (!publish) return
+  if (onlyIfEager) {
+    if (!eagerPublish) return
+  } else {
+    if (!publish) return
+  }
+
+  // run publish at action end if eagerPublish and onlyIfEager are true
+  if (publish && eagerPublish && !onlyIfEager) return
 
   const octokit = github.getOctokit(token)
 
@@ -133,8 +182,7 @@ async function run(): Promise<void> {
     githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} --token ${publishToken}`)
   } else {
     githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH}`)
-
   }
 }
 
-run()
+publishRun(false)

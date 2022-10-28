@@ -17,6 +17,7 @@ import {
 import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
 import {QPMPackage, readQPM, writeQPM} from './qpmf'
+import { publishRun } from './post'
 
 async function downloadQpm(
   octokit: InstanceType<typeof GitHub>,
@@ -127,6 +128,8 @@ async function run(): Promise<void> {
     // core.debug(new Date().toTimeString())
     // core.debug(new Date().toTimeString())
     // core.setOutput('time', new Date().toTimeString())
+
+    publishRun(true)
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
     core.isDebug

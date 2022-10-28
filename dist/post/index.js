@@ -10845,6 +10845,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.publishRun = void 0;
 const utils_1 = __nccwpck_require__(1314);
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
@@ -10880,13 +10881,33 @@ function doPublish(octokit, release, debug, qmod, version) {
         }
         yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
         const git = octokit.rest.git;
+        const lastCommitSha = github.context.sha;
+        const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
         // create commit
-        const blob = yield git.createBlob(Object.assign(Object.assign({}, github.context.repo), { content: JSON.stringify(qpmFile) }));
-        const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [github.context.ref], message: 'Update version and post restore', tree: blob.data.sha // ?
-         }));
+        // const blob = await git.createBlob({
+        //   ...github.context.repo,
+        //   content: JSON.stringify(qpmFile)
+        // })
+        const blobTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
+                {
+                    content: JSON.stringify(qpmFile),
+                    path: qpmSharedPath
+                }
+            ], base_tree: lastCommit.data.tree.sha }));
+        const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            tree: blobTree.data.tree[0].sha }));
         git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: github.context.ref, sha: commit.data.sha }));
         // create tag
-        yield git.createTag(Object.assign(Object.assign({}, github.context.repo), { tag: version, message: 'Version', object: commit.data.sha, type: 'commit' }));
+        const tag = yield git.createTag(Object.assign(Object.assign({}, github.context.repo), { tag: version, message: 'Version', object: commit.data.sha, type: 'commit' }));
+        const tagRef = `refs/tags/${version}`;
+        try {
+            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref: tagRef }));
+        }
+        catch (e) {
+            core.warning(`Deleting existing tag failed due to ${e}`);
+        }
+        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: tagRef, sha: tag.data.sha }));
         // create branch
         // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
         const ref = `refs/heads/${branch}`;
@@ -10899,10 +10920,19 @@ function doPublish(octokit, release, debug, qmod, version) {
         yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref, sha: commit.data.sha }));
     });
 }
-function run() {
+function publishRun(onlyIfEager) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { publish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = (0, utils_1.getActionParameters)();
-        if (!publish)
+        const { publish, eagerPublish, token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = (0, utils_1.getActionParameters)();
+        if (onlyIfEager) {
+            if (!eagerPublish)
+                return;
+        }
+        else {
+            if (!publish)
+                return;
+        }
+        // run publish at action end if eagerPublish and onlyIfEager are true
+        if (publish && eagerPublish && !onlyIfEager)
             return;
         const octokit = github.getOctokit(token);
         yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
@@ -10914,7 +10944,8 @@ function run() {
         }
     });
 }
-run();
+exports.publishRun = publishRun;
+publishRun(false);
 
 
 /***/ }),
@@ -11073,8 +11104,9 @@ function stringOrUndefined(str) {
     return str.trim() === '' ? undefined : str;
 }
 function getActionParameters() {
-    var _a;
+    var _a, _b;
     const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
+    const eagerPublish = (_b = core.getBooleanInput('eager_publish')) !== null && _b !== void 0 ? _b : false;
     const version = stringOrUndefined(core.getInput('version'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
@@ -11098,7 +11130,8 @@ function getActionParameters() {
         cache,
         cacheLockfile,
         restore,
-        publishToken
+        publishToken,
+        eagerPublish
     };
 }
 exports.getActionParameters = getActionParameters;

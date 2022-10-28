@@ -36,6 +36,7 @@ function stringOrUndefined(str: string): string | undefined {
 
 export function getActionParameters() {
   const publish: boolean = core.getBooleanInput('publish') ?? false
+  const eagerPublish: boolean = core.getBooleanInput('eager_publish') ?? false
   const version: string | undefined = stringOrUndefined(
     core.getInput('version')
   )
@@ -65,6 +66,7 @@ export function getActionParameters() {
     cache,
     cacheLockfile,
     restore,
-    publishToken
+    publishToken,
+    eagerPublish
   }
 }

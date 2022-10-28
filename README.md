@@ -15,6 +15,7 @@ Usage:
     restore: true # will run restore on download
     cache: true #will cache dependencies
     
+    eager_publish: true # If true, it will run publish when at the end of the action rather than post run of the workflow
     publish: true # Will publish the package at the end of the action run
     publish_token: ${{secrets.QPM_TOKEN}} # Token required for authorization publish to qpackages.com
     version: "1.0.0" # defaults to qpm-rust version, do not include v
@@ -24,4 +25,4 @@ Usage:
     qpm_debug_bin: true
 
     # Name of qmod in release asset. Assumes exists, same as prior
-    qpm_mod: "qmod_name" 
+    qpm_qmod: "qmod_name" 
