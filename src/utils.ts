@@ -35,8 +35,8 @@ function stringOrUndefined(str: string): string | undefined {
 }
 
 export function getActionParameters() {
-  const publish: boolean = core.getBooleanInput('publish') ?? false
-  const eagerPublish: boolean = core.getBooleanInput('eager_publish') ?? false
+  const publish: boolean = core.getBooleanInput('publish')
+  const eagerPublish: boolean = core.getBooleanInput('eager_publish')
   const version: string | undefined = stringOrUndefined(
     core.getInput('version')
   )

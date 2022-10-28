@@ -246,16 +246,18 @@ exports.publishRun = void 0;
 const utils_1 = __nccwpck_require__(918);
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
-const path = __importStar(__nccwpck_require__(5622));
-const process = __importStar(__nccwpck_require__(1765));
 const qpmf_1 = __nccwpck_require__(3072);
 const const_1 = __nccwpck_require__(6695);
 function doPublish(octokit, release, debug, qmod, version) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
-        const qpmSharedPath = path.join(
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        process.env.GITHUB_WORKSPACE, 'qpm.shared.json');
+        core.info("Publishing");
+        const qpmSharedPath = 'qpm.shared.json';
+        // path.join(
+        //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        //   process.env.GITHUB_WORKSPACE!,
+        //   'qpm.shared.json'
+        // )
         const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
         if (version) {
             qpmFile.config.info.version = version;
@@ -501,9 +503,8 @@ function stringOrUndefined(str) {
     return str.trim() === '' ? undefined : str;
 }
 function getActionParameters() {
-    var _a, _b;
-    const publish = (_a = core.getBooleanInput('publish')) !== null && _a !== void 0 ? _a : false;
-    const eagerPublish = (_b = core.getBooleanInput('eager_publish')) !== null && _b !== void 0 ? _b : false;
+    const publish = core.getBooleanInput('publish');
+    const eagerPublish = core.getBooleanInput('eager_publish');
     const version = stringOrUndefined(core.getInput('version'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
@@ -66222,14 +66223,6 @@ module.exports = require("os");
 
 "use strict";
 module.exports = require("path");
-
-/***/ }),
-
-/***/ 1765:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("process");
 
 /***/ }),
 
