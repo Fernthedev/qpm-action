@@ -175,10 +175,5 @@ export async function publishRun(params: ReturnType<typeof getActionParameters>)
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version)
-
-  if (publishToken) {
-    githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} --token ${publishToken}`)
-  } else {
-    githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH}`)
-  }
+  await githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} ${publishToken ?? ""}`)
 }
