@@ -10884,7 +10884,7 @@ function doPublish(octokit, release, debug, qmod, version) {
         }
         yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
         const git = octokit.rest.git;
-        core.group("Publish", () => __awaiter(this, void 0, void 0, function* () {
+        yield core.group("Publish", () => __awaiter(this, void 0, void 0, function* () {
             // create branch
             // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
             const branchRef = `refs/heads/${branch}`;

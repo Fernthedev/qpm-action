@@ -70,7 +70,7 @@ async function doPublish(
 
   const git = octokit.rest.git
 
-  core.group<void>("Publish", async () => {
+  await core.group<void>("Publish", async () => {
     // create branch
     // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
     const branchRef = `refs/heads/${branch}`
