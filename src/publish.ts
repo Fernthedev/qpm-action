@@ -89,12 +89,12 @@ async function doPublish(
       core.info('creating new branch')
       await git.createRef({
         ...github.context.repo,
-        ref: branchHead,
+        ref: branchRef,
         sha: lastCommitSha,
         key: branchRef
       })
     } catch (e) {
-      core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
+      core.warning(`Creating new branch ${branch} failed due to ${e}`)
     }
 
     core.info('Creating commit')

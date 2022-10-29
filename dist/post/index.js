@@ -10877,10 +10877,10 @@ function doPublish(octokit, release, debug, qmod, version) {
             const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
             try {
                 core.info('creating new branch');
-                yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: lastCommitSha, key: branchRef }));
+                yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: lastCommitSha, key: branchRef }));
             }
             catch (e) {
-                core.warning(`Deleting existing branch ${branch} failed due to ${e}`);
+                core.warning(`Creating new branch ${branch} failed due to ${e}`);
             }
             core.info('Creating commit');
             // create commit
