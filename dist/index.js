@@ -109,7 +109,7 @@ const api_1 = __nccwpck_require__(8947);
 const const_1 = __nccwpck_require__(6695);
 const utils_1 = __nccwpck_require__(918);
 const qpmf_1 = __nccwpck_require__(3072);
-const post_1 = __nccwpck_require__(95);
+const publish_1 = __nccwpck_require__(6123);
 function downloadQpm(octokit, token) {
     return __awaiter(this, void 0, void 0, function* () {
         const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
@@ -189,7 +189,7 @@ function run() {
             // core.debug(new Date().toTimeString())
             // core.setOutput('time', new Date().toTimeString())
             if (parameters.eagerPublish) {
-                (0, post_1.publishRun)(parameters);
+                (0, publish_1.publishRun)(parameters);
             }
         }
         catch (error) {
@@ -204,7 +204,7 @@ run();
 
 /***/ }),
 
-/***/ 95:
+/***/ 6123:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -333,10 +333,6 @@ function publishRun(params) {
     });
 }
 exports.publishRun = publishRun;
-const parameters = (0, utils_1.getActionParameters)();
-if (parameters.publish) {
-    publishRun(parameters);
-}
 
 
 /***/ }),

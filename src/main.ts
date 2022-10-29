@@ -2,10 +2,8 @@ import * as core from '@actions/core'
 import * as github from '@actions/github'
 import * as tc from '@actions/tool-cache'
 import * as cache from '@actions/cache'
-import * as io from '@actions/io'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as process from 'process'
 
 import {getQPM_RustExecutableName} from './api'
 import {
@@ -17,7 +15,7 @@ import {
 import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
 import {QPMPackage, readQPM, writeQPM} from './qpmf'
-import { publishRun } from './post'
+import { publishRun } from './publish'
 
 async function downloadQpm(
   octokit: InstanceType<typeof GitHub>,

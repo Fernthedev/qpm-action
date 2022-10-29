@@ -10807,7 +10807,7 @@ exports.QPM_COMMAND_CACHE_PATH = 'cache path';
 
 /***/ }),
 
-/***/ 7051:
+/***/ 9334:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -10936,10 +10936,6 @@ function publishRun(params) {
     });
 }
 exports.publishRun = publishRun;
-const parameters = (0, utils_1.getActionParameters)();
-if (parameters.publish) {
-    publishRun(parameters);
-}
 
 
 /***/ }),
@@ -11358,13 +11354,23 @@ module.exports = require("zlib");
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-/******/ 	
-/******/ 	// startup
-/******/ 	// Load entry module and return exports
-/******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(7051);
-/******/ 	module.exports = __webpack_exports__;
-/******/ 	
+var __webpack_exports__ = {};
+// This entry need to be wrapped in an IIFE because it need to be in strict mode.
+(() => {
+"use strict";
+var exports = __webpack_exports__;
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const publish_1 = __nccwpck_require__(9334);
+const utils_1 = __nccwpck_require__(1314);
+const parameters = (0, utils_1.getActionParameters)();
+if (parameters.publish) {
+    (0, publish_1.publishRun)(parameters);
+}
+
+})();
+
+module.exports = __webpack_exports__;
 /******/ })()
 ;
 //# sourceMappingURL=index.js.map
