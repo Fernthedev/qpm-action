@@ -94,16 +94,12 @@ async function doPublish(
       core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
     }
 
-    try {
       core.info('creating new branch')
-      await git.createRef({
+      const newBranch = await git.createRef({
         ...github.context.repo,
         ref: branchRef,
         sha: lastCommitSha
       })
-    } catch (e) {
-      core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
-    }
 
     core.info('Creating commit')
     // create commit
@@ -131,10 +127,10 @@ async function doPublish(
     })
 
     // update branch
-    core.info(`Updating branch ${branchRef}`)
+    core.info(`Updating branch ${newBranch.data.ref}`)
     await git.updateRef({
       ...github.context.repo,
-      ref: branchRef,
+      ref: newBranch.data.ref,
       sha: commit.data.sha,
       force: true
     })

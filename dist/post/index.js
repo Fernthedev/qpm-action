@@ -10898,13 +10898,8 @@ function doPublish(octokit, release, debug, qmod, version) {
             catch (e) {
                 core.warning(`Deleting existing branch ${branch} failed due to ${e}`);
             }
-            try {
-                core.info('creating new branch');
-                yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: lastCommitSha }));
-            }
-            catch (e) {
-                core.warning(`Deleting existing branch ${branch} failed due to ${e}`);
-            }
+            core.info('creating new branch');
+            const newBranch = yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: lastCommitSha }));
             core.info('Creating commit');
             // create commit
             // const blob = await git.createBlob({
@@ -10922,8 +10917,8 @@ function doPublish(octokit, release, debug, qmod, version) {
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 tree: newTree.data.tree[0].sha }));
             // update branch
-            core.info(`Updating branch ${branchRef}`);
-            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: commit.data.sha, force: true }));
+            core.info(`Updating branch ${newBranch.data.ref}`);
+            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: newBranch.data.ref, sha: commit.data.sha, force: true }));
             // create tag
             // const tag = await git.createTag({
             //   ...github.context.repo,
