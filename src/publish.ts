@@ -32,7 +32,7 @@ async function doPublish(
   }
   version ??= qpmFile.config.info.version
 
-  const branch = `version-${version}`
+  const branch = `version-${version.replace(".", "_")}`
   qpmFile.config.info.additionalData.branchName = branch
 
   const additionalData = qpmFile.config.info.additionalData
@@ -103,10 +103,6 @@ async function doPublish(
 
     core.info('Creating commit')
     // create commit
-    // const blob = await git.createBlob({
-    //   ...github.context.repo,
-    //   content: JSON.stringify(qpmFile)
-    // })
     const newTree = await git.createTree({
       ...github.context.repo,
       tree: [
@@ -134,32 +130,6 @@ async function doPublish(
       sha: commit.data.sha,
       force: true
     })
-
-    // create tag
-    // const tag = await git.createTag({
-    //   ...github.context.repo,
-    //   tag: version,
-    //   message: 'Version',
-    //   object: commit.data.sha,
-    //   type: 'commit'
-    // })
-
-    // const tagRef = `refs/tags/${version}`
-
-    // try {
-    //   await git.deleteRef({
-    //     ...github.context.repo,
-    //     ref: tagRef
-    //   })
-    // } catch (e) {
-    //   core.warning(`Deleting existing tag failed due to ${e}`)
-    // }
-
-    // await git.createRef({
-    //   ...github.context.repo,
-    //   ref: tagRef,
-    //   sha: tag.data.sha
-    // })
   })
   // do github stuff
 }
