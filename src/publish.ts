@@ -19,11 +19,12 @@ async function doPublish(
   version?: string
 ): Promise<void> {
   core.info('Publishing')
-  const qpmSharedPath = path.join(
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    process.env.GITHUB_WORKSPACE!,
-    'qpm.shared.json'
-  )
+  const qpmSharedPath = 'qpm.shared.json'
+  //path.join(
+  //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // process.env.GITHUB_WORKSPACE!,
+    // 'qpm.shared.json'
+  // )
   const qpmFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
 
   if (version) {

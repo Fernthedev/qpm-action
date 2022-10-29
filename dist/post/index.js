@@ -10844,9 +10844,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.publishRun = void 0;
 const utils_1 = __nccwpck_require__(1314);
@@ -10854,14 +10851,16 @@ const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const qpmf_1 = __nccwpck_require__(3460);
 const const_1 = __nccwpck_require__(8032);
-const path_1 = __importDefault(__nccwpck_require__(5622));
 function doPublish(octokit, release, debug, qmod, version) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         core.info('Publishing');
-        const qpmSharedPath = path_1.default.join(
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        process.env.GITHUB_WORKSPACE, 'qpm.shared.json');
+        const qpmSharedPath = 'qpm.shared.json';
+        //path.join(
+        //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        // process.env.GITHUB_WORKSPACE!,
+        // 'qpm.shared.json'
+        // )
         const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
         if (version) {
             qpmFile.config.info.version = version;
