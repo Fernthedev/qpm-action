@@ -9,6 +9,7 @@ import * as github from '@actions/github'
 import {GitHub} from '@actions/github/lib/utils'
 import {QPMSharedPackage, readQPM, writeQPM} from './qpmf'
 import {QPM_COMMAND_PUBLISH} from './const'
+import path from 'path'
 
 async function doPublish(
   octokit: InstanceType<typeof GitHub>,
@@ -18,12 +19,11 @@ async function doPublish(
   version?: string
 ): Promise<void> {
   core.info('Publishing')
-  const qpmSharedPath = 'qpm.shared.json'
-  // path.join(
-  //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  //   process.env.GITHUB_WORKSPACE!,
-  //   'qpm.shared.json'
-  // )
+  const qpmSharedPath = path.join(
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    process.env.GITHUB_WORKSPACE!,
+    'qpm.shared.json'
+  )
   const qpmFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
 
   if (version) {
@@ -75,24 +75,7 @@ async function doPublish(
     // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
     const branchRef = `refs/heads/${branch}`
 
-    try {
-      core.info("Deleting existing branch")
-      await git.deleteRef({
-        ...github.context.repo,
-        ref: branchRef
-      })
-    } catch (e) {
-      core.warning(`Deleting existing branch failed due to ${e}`)
-    }
-
-    core.info("creating new branch")
-    await git.createRef({
-      ...github.context.repo,
-      ref: branchRef,
-      sha: github.context.sha
-    })
-
-    core.info("Getting data")
+    core.info('Getting data')
     // get current repo data
     const lastCommitSha = github.context.sha
     const lastCommit = await git.getCommit({
@@ -100,13 +83,32 @@ async function doPublish(
       commit_sha: lastCommitSha
     })
 
+    try {
+      core.info("Deleting existing branch")
+      await git.deleteRef({
+        ...github.context.repo,
+        ref: branchRef
+      })
+    } catch (e) {
+      core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
+    }
+
+    core.info("creating new branch")
+    await git.createRef({
+      ...github.context.repo,
+      ref: branchRef,
+      sha: lastCommitSha
+    })
+
+
+
     core.info("Creating commit")
     // create commit
     // const blob = await git.createBlob({
     //   ...github.context.repo,
     //   content: JSON.stringify(qpmFile)
     // })
-    const blobTree = await git.createTree({
+    const newTree = await git.createTree({
       ...github.context.repo,
       tree: [
         {
@@ -115,22 +117,23 @@ async function doPublish(
           mode: '100644'
         }
       ],
-      base_tree: lastCommit.data.tree.sha
+      base_tree: lastCommit.data.tree.sha, 
     })
     const commit = await git.createCommit({
       ...github.context.repo,
       parents: [lastCommitSha],
       message: 'Update version and post restore',
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      tree: blobTree.data.tree[0].sha!!
+      tree: newTree.data.tree[0].sha!
     })
 
     // update branch
-    core.info("Updating branch")
+    core.info(`Updating branch ${branchRef}`)
     await git.updateRef({
       ...github.context.repo,
       ref: branchRef,
-      sha: commit.data.sha
+      sha: commit.data.sha,
+      force: true
     })
 
     // create tag

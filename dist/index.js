@@ -241,6 +241,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.publishRun = void 0;
 const utils_1 = __nccwpck_require__(918);
@@ -248,16 +251,14 @@ const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const qpmf_1 = __nccwpck_require__(3072);
 const const_1 = __nccwpck_require__(6695);
+const path_1 = __importDefault(__nccwpck_require__(5622));
 function doPublish(octokit, release, debug, qmod, version) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         core.info('Publishing');
-        const qpmSharedPath = 'qpm.shared.json';
-        // path.join(
-        //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        //   process.env.GITHUB_WORKSPACE!,
-        //   'qpm.shared.json'
-        // )
+        const qpmSharedPath = path_1.default.join(
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        process.env.GITHUB_WORKSPACE, 'qpm.shared.json');
         const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
         if (version) {
             qpmFile.config.info.version = version;
@@ -284,26 +285,26 @@ function doPublish(octokit, release, debug, qmod, version) {
             // create branch
             // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
             const branchRef = `refs/heads/${branch}`;
+            core.info('Getting data');
+            // get current repo data
+            const lastCommitSha = github.context.sha;
+            const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
             try {
                 core.info("Deleting existing branch");
                 yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef }));
             }
             catch (e) {
-                core.warning(`Deleting existing branch failed due to ${e}`);
+                core.warning(`Deleting existing branch ${branch} failed due to ${e}`);
             }
             core.info("creating new branch");
-            yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: github.context.sha }));
-            core.info("Getting data");
-            // get current repo data
-            const lastCommitSha = github.context.sha;
-            const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
+            yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: lastCommitSha }));
             core.info("Creating commit");
             // create commit
             // const blob = await git.createBlob({
             //   ...github.context.repo,
             //   content: JSON.stringify(qpmFile)
             // })
-            const blobTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
+            const newTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
                     {
                         content: JSON.stringify(qpmFile),
                         path: qpmSharedPath,
@@ -312,10 +313,10 @@ function doPublish(octokit, release, debug, qmod, version) {
                 ], base_tree: lastCommit.data.tree.sha }));
             const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                tree: blobTree.data.tree[0].sha }));
+                tree: newTree.data.tree[0].sha }));
             // update branch
-            core.info("Updating branch");
-            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: commit.data.sha }));
+            core.info(`Updating branch ${branchRef}`);
+            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: commit.data.sha, force: true }));
             // create tag
             // const tag = await git.createTag({
             //   ...github.context.repo,
