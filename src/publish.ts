@@ -22,8 +22,8 @@ async function doPublish(
   const qpmSharedPath = 'qpm.shared.json'
   //path.join(
   //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    // process.env.GITHUB_WORKSPACE!,
-    // 'qpm.shared.json'
+  // process.env.GITHUB_WORKSPACE!,
+  // 'qpm.shared.json'
   // )
   const qpmFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
 
@@ -71,7 +71,7 @@ async function doPublish(
 
   const git = octokit.rest.git
 
-  await core.group<void>("Publish", async () => {
+  await core.group<void>('Publish', async () => {
     // create branch
     // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
     const branchRef = `refs/heads/${branch}`
@@ -85,7 +85,7 @@ async function doPublish(
     })
 
     try {
-      core.info("Deleting existing branch")
+      core.info('Deleting existing branch')
       await git.deleteRef({
         ...github.context.repo,
         ref: branchRef
@@ -94,16 +94,18 @@ async function doPublish(
       core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
     }
 
-    core.info("creating new branch")
-    await git.createRef({
-      ...github.context.repo,
-      ref: branchRef,
-      sha: lastCommitSha
-    })
+    try {
+      core.info('creating new branch')
+      await git.createRef({
+        ...github.context.repo,
+        ref: branchRef,
+        sha: lastCommitSha
+      })
+    } catch (e) {
+      core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
+    }
 
-
-
-    core.info("Creating commit")
+    core.info('Creating commit')
     // create commit
     // const blob = await git.createBlob({
     //   ...github.context.repo,
@@ -118,7 +120,7 @@ async function doPublish(
           mode: '100644'
         }
       ],
-      base_tree: lastCommit.data.tree.sha, 
+      base_tree: lastCommit.data.tree.sha
     })
     const commit = await git.createCommit({
       ...github.context.repo,
@@ -166,18 +168,14 @@ async function doPublish(
   // do github stuff
 }
 
-export async function publishRun(params: ReturnType<typeof getActionParameters>): Promise<void> {
-  const {
-    token,
-    qpmDebugBin,
-    qpmQmod,
-    qpmReleaseBin,
-    version,
-    publishToken
-  } = params
+export async function publishRun(
+  params: ReturnType<typeof getActionParameters>
+): Promise<void> {
+  const {token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken} =
+    params
 
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version)
-  await githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} ${publishToken ?? ""}`)
+  await githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} ${publishToken ?? ''}`)
 }
