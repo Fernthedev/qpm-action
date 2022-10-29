@@ -283,20 +283,19 @@ function doPublish(octokit, release, debug, qmod, version) {
         yield core.group('Publish', () => __awaiter(this, void 0, void 0, function* () {
             // create branch
             // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-            const branchRef = `refs/heads/${branch}`;
+            const branchHead = `heads/${branch}`;
+            const branchRef = `refs/${branchHead}`;
             core.info('Getting data');
             // get current repo data
             const lastCommitSha = github.context.sha;
             const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
             try {
-                core.info('Deleting existing branch');
-                yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef }));
+                core.info('creating new branch');
+                yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: lastCommitSha, key: branchRef }));
             }
             catch (e) {
                 core.warning(`Deleting existing branch ${branch} failed due to ${e}`);
             }
-            core.info('creating new branch');
-            const newBranch = yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: lastCommitSha }));
             core.info('Creating commit');
             // create commit
             const newTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
@@ -310,8 +309,8 @@ function doPublish(octokit, release, debug, qmod, version) {
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 tree: newTree.data.tree[0].sha }));
             // update branch
-            core.info(`Updating branch ${newBranch.data.ref}`);
-            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: newBranch.data.ref, sha: commit.data.sha, force: true }));
+            core.info(`Updating branch ${branchRef}`);
+            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: commit.data.sha, force: true }));
         }));
     });
 }

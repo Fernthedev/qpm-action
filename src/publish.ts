@@ -74,7 +74,8 @@ async function doPublish(
   await core.group<void>('Publish', async () => {
     // create branch
     // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-    const branchRef = `refs/heads/${branch}`
+    const branchHead = `heads/${branch}`
+    const branchRef = `refs/${branchHead}`
 
     core.info('Getting data')
     // get current repo data
@@ -85,21 +86,16 @@ async function doPublish(
     })
 
     try {
-      core.info('Deleting existing branch')
-      await git.deleteRef({
+      core.info('creating new branch')
+      await git.createRef({
         ...github.context.repo,
-        ref: branchRef
+        ref: branchHead,
+        sha: lastCommitSha,
+        key: branchRef
       })
     } catch (e) {
       core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
     }
-
-      core.info('creating new branch')
-      const newBranch = await git.createRef({
-        ...github.context.repo,
-        ref: branchRef,
-        sha: lastCommitSha
-      })
 
     core.info('Creating commit')
     // create commit
@@ -123,10 +119,10 @@ async function doPublish(
     })
 
     // update branch
-    core.info(`Updating branch ${newBranch.data.ref}`)
+    core.info(`Updating branch ${branchRef}`)
     await git.updateRef({
       ...github.context.repo,
-      ref: newBranch.data.ref,
+      ref: branchHead,
       sha: commit.data.sha,
       force: true
     })
