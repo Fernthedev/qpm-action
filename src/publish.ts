@@ -86,7 +86,8 @@ async function doPublish(
     tree: [
       {
         content: JSON.stringify(qpmFile),
-        path: qpmSharedPath
+        path: qpmSharedPath,
+        mode: "100644"
       }
     ],
     base_tree: lastCommit.data.tree.sha

@@ -290,7 +290,8 @@ function doPublish(octokit, release, debug, qmod, version) {
         const blobTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
                 {
                     content: JSON.stringify(qpmFile),
-                    path: qpmSharedPath
+                    path: qpmSharedPath,
+                    mode: "100644"
                 }
             ], base_tree: lastCommit.data.tree.sha }));
         const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
