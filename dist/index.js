@@ -263,16 +263,16 @@ function doPublish(octokit, release, debug, qmod, version) {
             qpmFile.config.info.version = version;
         }
         version !== null && version !== void 0 ? version : (version = qpmFile.config.info.version);
-        const branch = `version-${version.replace(/\./g, '_')}`;
+        const branch = `version-${version}`;
         qpmFile.config.info.additionalData.branchName = branch;
         const additionalData = qpmFile.config.info.additionalData;
         const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, version);
         if (release) {
-            const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace('.', '_')}.so`;
+            const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (debug) {
-            const name = (_b = additionalData.debugSoLink) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace('.', '_')}.so`;
+            const name = (_b = additionalData.debugSoLink) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (qmod) {
@@ -305,12 +305,10 @@ function doPublish(octokit, release, debug, qmod, version) {
                         mode: '100644'
                     }
                 ], base_tree: lastCommit.data.tree.sha }));
-            const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                tree: newTree.data.tree[0].sha }));
+            const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', tree: newTree.data.sha }));
             // update branch
             core.info(`Updating branch ${branchRef}`);
-            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: commit.data.sha, force: true }));
+            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: commit.data.sha }));
         }));
     });
 }

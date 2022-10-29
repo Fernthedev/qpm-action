@@ -32,7 +32,7 @@ async function doPublish(
   }
   version ??= qpmFile.config.info.version
 
-  const branch = `version-${version.replace(/\./g, '_')}`
+  const branch = `version-${version}`
   qpmFile.config.info.additionalData.branchName = branch
 
   const additionalData = qpmFile.config.info.additionalData
@@ -47,7 +47,7 @@ async function doPublish(
     const name =
       additionalData.overrideSoName ??
       `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(
-        '.',
+        /\./g,
         '_'
       )}.so`
     qpmFile.config.info.additionalData.soLink = `${download}/${name}`
@@ -57,7 +57,7 @@ async function doPublish(
     const name =
       additionalData.debugSoLink ??
       `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(
-        '.',
+        /\./g,
         '_'
       )}.so`
     qpmFile.config.info.additionalData.soLink = `${download}/${name}`
@@ -114,8 +114,7 @@ async function doPublish(
       ...github.context.repo,
       parents: [lastCommitSha],
       message: 'Update version and post restore',
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      tree: newTree.data.tree[0].sha!
+      tree: newTree.data.sha
     })
 
     // update branch
@@ -123,8 +122,7 @@ async function doPublish(
     await git.updateRef({
       ...github.context.repo,
       ref: branchHead,
-      sha: commit.data.sha,
-      force: true
+      sha: commit.data.sha
     })
   })
   // do github stuff
