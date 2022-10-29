@@ -251,7 +251,7 @@ const const_1 = __nccwpck_require__(6695);
 function doPublish(octokit, release, debug, qmod, version) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
-        core.info("Publishing");
+        core.info('Publishing');
         const qpmSharedPath = 'qpm.shared.json';
         // path.join(
         //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -280,6 +280,17 @@ function doPublish(octokit, release, debug, qmod, version) {
         }
         yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
         const git = octokit.rest.git;
+        // create branch
+        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+        const branchRef = `refs/heads/${branch}`;
+        try {
+            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef }));
+        }
+        catch (e) {
+            core.warning(`Deleting existing branch failed due to ${e}`);
+        }
+        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: github.context.sha }));
+        // get current repo data
         const lastCommitSha = github.context.sha;
         const lastCommit = yield git.getCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha: lastCommitSha }));
         // create commit
@@ -291,13 +302,14 @@ function doPublish(octokit, release, debug, qmod, version) {
                 {
                     content: JSON.stringify(qpmFile),
                     path: qpmSharedPath,
-                    mode: "100644"
+                    mode: '100644'
                 }
             ], base_tree: lastCommit.data.tree.sha }));
         const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', 
             // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             tree: blobTree.data.tree[0].sha }));
-        git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: github.context.ref, sha: commit.data.sha }));
+        // update branch
+        yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchRef, sha: commit.data.sha }));
         // create tag
         const tag = yield git.createTag(Object.assign(Object.assign({}, github.context.repo), { tag: version, message: 'Version', object: commit.data.sha, type: 'commit' }));
         const tagRef = `refs/tags/${version}`;
@@ -308,16 +320,6 @@ function doPublish(octokit, release, debug, qmod, version) {
             core.warning(`Deleting existing tag failed due to ${e}`);
         }
         yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref: tagRef, sha: tag.data.sha }));
-        // create branch
-        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-        const ref = `refs/heads/${branch}`;
-        try {
-            yield git.deleteRef(Object.assign(Object.assign({}, github.context.repo), { ref }));
-        }
-        catch (e) {
-            core.warning(`Deleting existing branch failed due to ${e}`);
-        }
-        yield git.createRef(Object.assign(Object.assign({}, github.context.repo), { ref, sha: commit.data.sha }));
     });
 }
 function publishRun(params) {

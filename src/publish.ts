@@ -17,7 +17,7 @@ async function doPublish(
   qmod?: string,
   version?: string
 ): Promise<void> {
-  core.info("Publishing")
+  core.info('Publishing')
   const qpmSharedPath = 'qpm.shared.json'
   // path.join(
   //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -70,6 +70,26 @@ async function doPublish(
 
   const git = octokit.rest.git
 
+  // create branch
+  // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+  const branchRef = `refs/heads/${branch}`
+
+  try {
+    await git.deleteRef({
+      ...github.context.repo,
+      ref: branchRef
+    })
+  } catch (e) {
+    core.warning(`Deleting existing branch failed due to ${e}`)
+  }
+
+  await git.createRef({
+    ...github.context.repo,
+    ref: branchRef,
+    sha: github.context.sha
+  })
+
+  // get current repo data
   const lastCommitSha = github.context.sha
   const lastCommit = await git.getCommit({
     ...github.context.repo,
@@ -87,7 +107,7 @@ async function doPublish(
       {
         content: JSON.stringify(qpmFile),
         path: qpmSharedPath,
-        mode: "100644"
+        mode: '100644'
       }
     ],
     base_tree: lastCommit.data.tree.sha
@@ -100,9 +120,10 @@ async function doPublish(
     tree: blobTree.data.tree[0].sha!!
   })
 
-  git.updateRef({
+  // update branch
+  await git.updateRef({
     ...github.context.repo,
-    ref: github.context.ref,
+    ref: branchRef,
     sha: commit.data.sha
   })
 
@@ -130,25 +151,6 @@ async function doPublish(
     ...github.context.repo,
     ref: tagRef,
     sha: tag.data.sha
-  })
-
-  // create branch
-  // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-  const ref = `refs/heads/${branch}`
-
-  try {
-    await git.deleteRef({
-      ...github.context.repo,
-      ref
-    })
-  } catch (e) {
-    core.warning(`Deleting existing branch failed due to ${e}`)
-  }
-
-  await git.createRef({
-    ...github.context.repo,
-    ref,
-    sha: commit.data.sha
   })
 
   // do github stuff
