@@ -84,40 +84,82 @@ async function doPublish(
       commit_sha: lastCommitSha
     })
 
-
     try {
-      core.info('creating new branch')
-      await git.createRef({
+      core.info('Deleting existing branch')
+      await git.deleteRef({
         ...github.context.repo,
-        ref: branchRef,
-        sha: lastCommitSha
+        ref: branchRef
       })
     } catch (e) {
       core.warning(`Deleting existing branch ${branch} failed due to ${e}`)
     }
 
-
+      core.info('creating new branch')
+      const newBranch = await git.createRef({
+        ...github.context.repo,
+        ref: branchRef,
+        sha: lastCommitSha
+      })
 
     core.info('Creating commit')
-
-    const tree = await git.getTree({
+    // create commit
+    // const blob = await git.createBlob({
+    //   ...github.context.repo,
+    //   content: JSON.stringify(qpmFile)
+    // })
+    const newTree = await git.createTree({
       ...github.context.repo,
-      tree_sha: lastCommit.data.tree.sha
+      tree: [
+        {
+          content: JSON.stringify(qpmFile),
+          path: qpmSharedPath,
+          mode: '100644'
+        }
+      ],
+      base_tree: lastCommit.data.tree.sha
     })
-    const qpmSharedFileTree =  tree.data.tree.find(e => e.path === qpmSharedPath)
-    const fileBlob = await git.getBlob({
+    const commit = await git.createCommit({
       ...github.context.repo,
-      file_sha: qpmSharedFileTree?.sha!
-    })
-
-    await octokit.rest.repos.createOrUpdateFileContents({
-      ...github.context.repo,
-      content: Buffer.from(JSON.stringify(qpmFile)).toString('base64'),
+      parents: [lastCommitSha],
       message: 'Update version and post restore',
-      path: qpmSharedPath,
-      branch,
-      sha: fileBlob.data.sha
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      tree: newTree.data.tree[0].sha!
     })
+
+    // update branch
+    core.info(`Updating branch ${newBranch.data.ref}`)
+    await git.updateRef({
+      ...github.context.repo,
+      ref: newBranch.data.ref,
+      sha: commit.data.sha,
+      force: true
+    })
+
+    // create tag
+    // const tag = await git.createTag({
+    //   ...github.context.repo,
+    //   tag: version,
+    //   message: 'Version',
+    //   object: commit.data.sha,
+    //   type: 'commit'
+    // })
+
+    // const tagRef = `refs/tags/${version}`
+
+    // try {
+    //   await git.deleteRef({
+    //     ...github.context.repo,
+    //     ref: tagRef
+    //   })
+    // } catch (e) {
+    //   core.warning(`Deleting existing tag failed due to ${e}`)
+    // }
+
+    // await git.createRef({
+    //   ...github.context.repo,
+    //   ref: tagRef,
+    //   sha: tag.data.sha
+    // })
   })
   // do github stuff
 }
