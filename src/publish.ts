@@ -32,7 +32,7 @@ async function doPublish(
   }
   version ??= qpmFile.config.info.version
 
-  const branch = `version-${version.replace(".", "_")}`
+  const branch = `version-${version.replace(/\./g, '_')}`
   qpmFile.config.info.additionalData.branchName = branch
 
   const additionalData = qpmFile.config.info.additionalData
