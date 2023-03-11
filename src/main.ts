@@ -92,7 +92,7 @@ async function run(): Promise<void> {
 
       paths = [cachePath]
       const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
-      cacheKey = await cache.restoreCache(paths, key, restoreKeys)
+      cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }
 
     if (restore) {
