@@ -71,21 +71,20 @@ async function downloadQpm(
 
 async function run(): Promise<void> {
   try {
+    const qpmFilePath = 'qpm.json'
     const parameters = getActionParameters()
-    const {restore, token} = parameters
+    const {restore, token, version} = parameters
     const octokit = github.getOctokit(token)
     const qpmRustPath = await downloadQpm(octokit, token)
 
-    const cachePathOutput = stripAnsi((
-      await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)
-    ).stdout)
+    const cachePathOutput = stripAnsi(
+      (await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout
+    )
 
     let paths: string[] = []
     let cacheKey: string | undefined
     const key = 'qpm-cache-'
 
-    
-    
     if (parameters.cache) {
       // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
       const cachePath = cachePathOutput
@@ -95,7 +94,21 @@ async function run(): Promise<void> {
 
       paths = [cachePath]
       const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
-      cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
+      cacheKey = await cache.restoreCache(
+        paths,
+        key,
+        restoreKeys,
+        undefined,
+        true
+      )
+    }
+
+    if (version) {
+      const qpm = await readQPM<QPMPackage>(qpmFilePath)
+
+      qpm.info.version = version
+      
+      writeQPM(qpmFilePath, qpm)
     }
 
     if (restore) {
@@ -106,16 +119,6 @@ async function run(): Promise<void> {
       await cache.saveCache(paths, cacheKey ?? key)
     }
 
-    if (parameters.version) {
-      const qpm = await readQPM<QPMPackage>('./qpm.json')
-      qpm.info.version = parameters.version
-      writeQPM('qpm.json', qpm)
-    }
-    // const ms: string = core.getInput('milliseconds')
-    // core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
-    // core.debug(new Date().toTimeString())
-    // core.debug(new Date().toTimeString())
-    // core.setOutput('time', new Date().toTimeString())
 
     if (parameters.eagerPublish) {
       publishRun(parameters)

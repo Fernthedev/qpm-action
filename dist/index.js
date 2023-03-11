@@ -154,8 +154,9 @@ function downloadQpm(octokit, token) {
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            const qpmFilePath = 'qpm.json';
             const parameters = (0, utils_1.getActionParameters)();
-            const { restore, token } = parameters;
+            const { restore, token, version } = parameters;
             const octokit = github.getOctokit(token);
             const qpmRustPath = yield downloadQpm(octokit, token);
             const cachePathOutput = (0, strip_ansi_1.default)((yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout);
@@ -172,22 +173,17 @@ function run() {
                 const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-'];
                 cacheKey = yield cache.restoreCache(paths, key, restoreKeys, undefined, true);
             }
+            if (version) {
+                const qpm = yield (0, qpmf_1.readQPM)(qpmFilePath);
+                qpm.info.version = version;
+                (0, qpmf_1.writeQPM)(qpmFilePath, qpm);
+            }
             if (restore) {
                 yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_RESTORE}`);
             }
             if (parameters.cache) {
                 yield cache.saveCache(paths, cacheKey !== null && cacheKey !== void 0 ? cacheKey : key);
             }
-            if (parameters.version) {
-                const qpm = yield (0, qpmf_1.readQPM)('./qpm.json');
-                qpm.info.version = parameters.version;
-                (0, qpmf_1.writeQPM)('qpm.json', qpm);
-            }
-            // const ms: string = core.getInput('milliseconds')
-            // core.debug(`Waiting ${ms} milliseconds ...`) // debug is only output if you set the secret `ACTIONS_STEP_DEBUG` to true
-            // core.debug(new Date().toTimeString())
-            // core.debug(new Date().toTimeString())
-            // core.setOutput('time', new Date().toTimeString())
             if (parameters.eagerPublish) {
                 (0, publish_1.publishRun)(parameters);
             }
