@@ -9,60 +9,47 @@ import {getQPM_RustExecutableName} from './api'
 import {
   QPM_COMMAND_CACHE_PATH,
   QPM_COMMAND_RESTORE,
+  QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
-  QPM_REPOSITORY_OWNER
+  QPM_REPOSITORY_OWNER,
+  QPM_REPOSITORY_WORKFLOW_NAME
 } from './const'
 import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
 import {QPMPackage, readQPM, writeQPM} from './qpmf'
-import { publishRun } from './publish'
+import {publishRun} from './publish'
 
 async function downloadQpm(
   octokit: InstanceType<typeof GitHub>,
   token: string
 ): Promise<string | undefined> {
-  const artifacts = await octokit.rest.actions.listArtifactsForRepo({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME
-  })
-
   const expectedArtifactName = getQPM_RustExecutableName()
   core.debug(
     `Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`
   )
-  const artifactToDownload = artifacts.data.artifacts.find(
-    e => e.name === expectedArtifactName
-  )
 
-  if (artifactToDownload === undefined)
-    throw new Error(`Unable to find artifact ${expectedArtifactName}`)
+  const branch = await octokit.rest.repos.getBranch({
+    branch: QPM_REPOSITORY_BRANCH,
+    owner: QPM_REPOSITORY_OWNER,
+    repo: QPM_REPOSITORY_NAME
+  })
 
-  let cachedPath = tc.find('qpm-rust', artifactToDownload.id.toString())
+  const qpmVersion = branch.data.commit.sha
+  let cachedPath = tc.find('qpm-rust', qpmVersion)
 
   if (fs.existsSync(cachedPath)) {
     core.debug('Using existing qpm-rust tool cached')
     core.addPath(cachedPath)
     return path.join(cachedPath, 'qpm-rust')
   }
-  core.debug(`Downloading from ${artifactToDownload.archive_download_url}`)
-  const artifactDownload = await octokit.rest.actions.getArtifact({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    artifact_id: artifactToDownload.id,
-    archive_format: 'zip'
-  })
 
-  const qpmTool = await tc.downloadTool(
-    artifactDownload.data.archive_download_url,
-    undefined,
-    `Bearer ${token}`
-  )
+  const url = `https://nightly.link/${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}/workflows/${QPM_REPOSITORY_WORKFLOW_NAME}/${QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`
+
+  core.debug(`Downloading from ${url}`)
+
+  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
   const qpmToolExtract = await tc.extractZip(qpmTool)
-  cachedPath = await tc.cacheDir(
-    qpmToolExtract,
-    'qpm',
-    artifactToDownload.id.toString()
-  )
+  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', qpmVersion)
 
   // Add "$GITHUB_WORKSPACE/QPM/" to path
   core.addPath(cachedPath)

@@ -51,9 +51,11 @@ exports.getQPM_RustExecutableName = getQPM_RustExecutableName;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.QPM_COMMAND_CACHE_PATH = exports.QPM_COMMAND_PUBLISH = exports.QPM_COMMAND_RESTORE = exports.QPM_REPOSITORY_NAME = exports.QPM_REPOSITORY_OWNER = void 0;
+exports.QPM_COMMAND_CACHE_PATH = exports.QPM_COMMAND_PUBLISH = exports.QPM_COMMAND_RESTORE = exports.QPM_REPOSITORY_BRANCH = exports.QPM_REPOSITORY_WORKFLOW_NAME = exports.QPM_REPOSITORY_NAME = exports.QPM_REPOSITORY_OWNER = void 0;
 exports.QPM_REPOSITORY_OWNER = 'QuestPackageManager';
 exports.QPM_REPOSITORY_NAME = 'QPM.CLI';
+exports.QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
+exports.QPM_REPOSITORY_BRANCH = 'main';
 exports.QPM_COMMAND_RESTORE = 'restore';
 exports.QPM_COMMAND_PUBLISH = 'publish';
 exports.QPM_COMMAND_CACHE_PATH = 'cache path';
@@ -112,31 +114,25 @@ const qpmf_1 = __nccwpck_require__(386);
 const publish_1 = __nccwpck_require__(222);
 function downloadQpm(octokit, token) {
     return __awaiter(this, void 0, void 0, function* () {
-        const artifacts = yield octokit.rest.actions.listArtifactsForRepo({
+        const expectedArtifactName = (0, api_1.getQPM_RustExecutableName)();
+        core.debug(`Looking for ${expectedArtifactName} in ${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}`);
+        const branch = yield octokit.rest.repos.getBranch({
+            branch: const_1.QPM_REPOSITORY_BRANCH,
             owner: const_1.QPM_REPOSITORY_OWNER,
             repo: const_1.QPM_REPOSITORY_NAME
         });
-        const expectedArtifactName = (0, api_1.getQPM_RustExecutableName)();
-        core.debug(`Looking for ${expectedArtifactName} in ${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}`);
-        const artifactToDownload = artifacts.data.artifacts.find(e => e.name === expectedArtifactName);
-        if (artifactToDownload === undefined)
-            throw new Error(`Unable to find artifact ${expectedArtifactName}`);
-        let cachedPath = tc.find('qpm-rust', artifactToDownload.id.toString());
+        const qpmVersion = branch.data.commit.sha;
+        let cachedPath = tc.find('qpm-rust', qpmVersion);
         if (fs.existsSync(cachedPath)) {
             core.debug('Using existing qpm-rust tool cached');
             core.addPath(cachedPath);
             return path.join(cachedPath, 'qpm-rust');
         }
-        core.debug(`Downloading from ${artifactToDownload.archive_download_url}`);
-        const artifactDownload = yield octokit.rest.actions.getArtifact({
-            owner: const_1.QPM_REPOSITORY_OWNER,
-            repo: const_1.QPM_REPOSITORY_NAME,
-            artifact_id: artifactToDownload.id,
-            archive_format: 'zip'
-        });
-        const qpmTool = yield tc.downloadTool(artifactDownload.data.archive_download_url, undefined, `Bearer ${token}`);
+        const url = `https://nightly.link/${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}/workflows/${const_1.QPM_REPOSITORY_WORKFLOW_NAME}/${const_1.QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`;
+        core.debug(`Downloading from ${url}`);
+        const qpmTool = yield tc.downloadTool(url, undefined, `Bearer ${token}`);
         const qpmToolExtract = yield tc.extractZip(qpmTool);
-        cachedPath = yield tc.cacheDir(qpmToolExtract, 'qpm', artifactToDownload.id.toString());
+        cachedPath = yield tc.cacheDir(qpmToolExtract, 'qpm', qpmVersion);
         // Add "$GITHUB_WORKSPACE/QPM/" to path
         core.addPath(cachedPath);
         core.debug(`Added ${cachedPath} to path`);
