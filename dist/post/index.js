@@ -10927,7 +10927,7 @@ const github = __importStar(__nccwpck_require__(3695));
 const qpmf_1 = __nccwpck_require__(2358);
 const const_1 = __nccwpck_require__(2086);
 function doPublish(octokit, release, debug, qmod, version, tag) {
-    var _a, _b;
+    var _a, _b, _c;
     return __awaiter(this, void 0, void 0, function* () {
         core.info('Publishing');
         const qpmSharedPath = 'qpm.shared.json';
@@ -10945,12 +10945,17 @@ function doPublish(octokit, release, debug, qmod, version, tag) {
         qpmFile.config.info.additionalData.branchName = branch;
         const additionalData = qpmFile.config.info.additionalData;
         const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, tag !== null && tag !== void 0 ? tag : version);
+        const fileId = qpmFile.config.info.id;
+        const fixedFileVersion = qpmFile.config.info.version.replace(/\./g, '_');
         if (release) {
-            const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
+            const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
+            const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : versionedName;
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (debug) {
-            const name = (_b = additionalData.overrideDebugSoName) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
+            const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
+            const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
+            const name = (_c = (_b = additionalData.overrideDebugSoName) !== null && _b !== void 0 ? _b : nameOverride) !== null && _c !== void 0 ? _c : debugVersionedName;
             qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
         }
         if (qmod) {

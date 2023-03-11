@@ -9,7 +9,6 @@ import * as github from '@actions/github'
 import {GitHub} from '@actions/github/lib/utils'
 import {QPMSharedPackage, readQPM, writeQPM} from './qpmf'
 import {QPM_COMMAND_PUBLISH} from './const'
-import path from 'path'
 
 async function doPublish(
   octokit: InstanceType<typeof GitHub>,
@@ -44,23 +43,24 @@ async function doPublish(
     tag ?? version
   )
 
+  const fileId = qpmFile.config.info.id
+  const fixedFileVersion = qpmFile.config.info.version.replace(/\./g, '_')
   if (release) {
-    const name =
-      additionalData.overrideSoName ??
-      `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(
-        /\./g,
-        '_'
-      )}.so`
+    const versionedName = `lib${fileId}_${fixedFileVersion}.so`
+    const name = additionalData.overrideSoName ?? versionedName
+      
     qpmFile.config.info.additionalData.soLink = `${download}/${name}`
   }
 
   if (debug) {
+    const nameOverride =
+      additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`
+
+    const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`
+
     const name =
-      additionalData.overrideDebugSoName ??
-      `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(
-        /\./g,
-        '_'
-      )}.so`
+      additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName
+    
     qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`
   }
 
@@ -133,11 +133,20 @@ async function doPublish(
 export async function publishRun(
   params: ReturnType<typeof getActionParameters>
 ): Promise<void> {
-  const {token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag} =
-    params
+  const {
+    token,
+    qpmDebugBin,
+    qpmQmod,
+    qpmReleaseBin,
+    version,
+    publishToken,
+    tag
+  } = params
 
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
-  await githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`)
+  await githubExecAsync(
+    `qpm-rust ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`
+  )
 }
