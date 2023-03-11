@@ -10941,7 +10941,7 @@ function doPublish(octokit, release, debug, qmod, version) {
             qpmFile.config.info.version = version;
         }
         version !== null && version !== void 0 ? version : (version = qpmFile.config.info.version);
-        const branch = `version-${version.replace(/\./g, '_')}`;
+        const branch = `version/v${version.replace(/\./g, '_')}`;
         qpmFile.config.info.additionalData.branchName = branch;
         const additionalData = qpmFile.config.info.additionalData;
         const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, version);
