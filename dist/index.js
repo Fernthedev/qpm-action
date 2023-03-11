@@ -303,8 +303,8 @@ function doPublish(octokit, release, debug, qmod, version) {
                 ], base_tree: lastCommit.data.tree.sha }));
             const commit = yield git.createCommit(Object.assign(Object.assign({}, github.context.repo), { parents: [lastCommitSha], message: 'Update version and post restore', tree: newTree.data.sha }));
             // update branch
-            core.info(`Updating branch ${branchRef}`);
-            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: commit.data.sha }));
+            core.info(`Updating branch ${branchRef} ${commit.data.sha}`);
+            yield git.updateRef(Object.assign(Object.assign({}, github.context.repo), { ref: branchHead, sha: commit.data.sha, force: true }));
         }));
     });
 }

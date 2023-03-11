@@ -118,11 +118,12 @@ async function doPublish(
     })
 
     // update branch
-    core.info(`Updating branch ${branchRef}`)
+    core.info(`Updating branch ${branchRef} ${commit.data.sha}`)
     await git.updateRef({
       ...github.context.repo,
       ref: branchHead,
-      sha: commit.data.sha
+      sha: commit.data.sha,
+      force: true
     })
   })
   // do github stuff
