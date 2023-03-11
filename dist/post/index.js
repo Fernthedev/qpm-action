@@ -10950,8 +10950,8 @@ function doPublish(octokit, release, debug, qmod, version) {
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (debug) {
-            const name = (_b = additionalData.debugSoLink) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
-            qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
+            const name = (_b = additionalData.overrideDebugSoName) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
+            qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
         }
         if (qmod) {
             qpmFile.config.info.additionalData.modLink = `${download}/${qmod}`;

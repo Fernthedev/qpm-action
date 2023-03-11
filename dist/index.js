@@ -157,7 +157,7 @@ function run() {
             const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
             let paths = [];
             let cacheKey;
-            const key = 'qpm-cache';
+            const key = 'qpm-cache-';
             if (parameters.cache) {
                 // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
                 const cachePath = cachePathOutput
@@ -268,8 +268,8 @@ function doPublish(octokit, release, debug, qmod, version) {
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (debug) {
-            const name = (_b = additionalData.debugSoLink) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
-            qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
+            const name = (_b = additionalData.overrideDebugSoName) !== null && _b !== void 0 ? _b : `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
+            qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
         }
         if (qmod) {
             qpmFile.config.info.additionalData.modLink = `${download}/${qmod}`;

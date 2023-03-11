@@ -55,12 +55,12 @@ async function doPublish(
 
   if (debug) {
     const name =
-      additionalData.debugSoLink ??
+      additionalData.overrideDebugSoName ??
       `debug_lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(
         /\./g,
         '_'
       )}.so`
-    qpmFile.config.info.additionalData.soLink = `${download}/${name}`
+    qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`
   }
 
   if (qmod) {

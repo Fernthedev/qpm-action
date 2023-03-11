@@ -81,8 +81,9 @@ async function run(): Promise<void> {
 
     let paths: string[] = []
     let cacheKey: string | undefined
-    const key = 'qpm-cache'
+    const key = 'qpm-cache-'
 
+    
     if (parameters.cache) {
       // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
       const cachePath = cachePathOutput
