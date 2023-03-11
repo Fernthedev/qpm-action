@@ -40,6 +40,9 @@ export function getActionParameters() {
   const version: string | undefined = stringOrUndefined(
     core.getInput('version')
   )
+  const tag: string | undefined = stringOrUndefined(
+    core.getInput('tag')
+  )
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
 
   const qpmReleaseBin = core.getBooleanInput('qpm_release_bin')
@@ -63,6 +66,7 @@ export function getActionParameters() {
     token: myToken,
     publish,
     version,
+    tag,
     cache,
     cacheLockfile,
     restore,

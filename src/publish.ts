@@ -16,7 +16,8 @@ async function doPublish(
   release: boolean,
   debug: boolean,
   qmod?: string,
-  version?: string
+  version?: string,
+  tag?: string
 ): Promise<void> {
   core.info('Publishing')
   const qpmSharedPath = 'qpm.shared.json'
@@ -40,7 +41,7 @@ async function doPublish(
   const download = getReleaseDownloadLink(
     github.context.repo.owner,
     github.context.repo.repo,
-    version
+    tag ?? version
   )
 
   if (release) {
@@ -132,11 +133,11 @@ async function doPublish(
 export async function publishRun(
   params: ReturnType<typeof getActionParameters>
 ): Promise<void> {
-  const {token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken} =
+  const {token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag} =
     params
 
   const octokit = github.getOctokit(token)
 
-  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version)
+  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
   await githubExecAsync(`qpm-rust ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`)
 }

@@ -18,6 +18,7 @@ import {GitHub} from '@actions/github/lib/utils'
 import {getActionParameters, githubExecAsync} from './utils'
 import {QPMPackage, readQPM, writeQPM} from './qpmf'
 import {publishRun} from './publish'
+import stripAnsi from 'strip-ansi'
 
 async function downloadQpm(
   octokit: InstanceType<typeof GitHub>,
@@ -75,14 +76,15 @@ async function run(): Promise<void> {
     const octokit = github.getOctokit(token)
     const qpmRustPath = await downloadQpm(octokit, token)
 
-    const cachePathOutput = (
+    const cachePathOutput = stripAnsi((
       await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)
-    ).stdout
+    ).stdout)
 
     let paths: string[] = []
     let cacheKey: string | undefined
     const key = 'qpm-cache-'
 
+    
     
     if (parameters.cache) {
       // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp

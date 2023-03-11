@@ -10926,7 +10926,7 @@ const core = __importStar(__nccwpck_require__(7733));
 const github = __importStar(__nccwpck_require__(3695));
 const qpmf_1 = __nccwpck_require__(2358);
 const const_1 = __nccwpck_require__(2086);
-function doPublish(octokit, release, debug, qmod, version) {
+function doPublish(octokit, release, debug, qmod, version, tag) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         core.info('Publishing');
@@ -10944,7 +10944,7 @@ function doPublish(octokit, release, debug, qmod, version) {
         const branch = `version/v${version.replace(/\./g, '_')}`;
         qpmFile.config.info.additionalData.branchName = branch;
         const additionalData = qpmFile.config.info.additionalData;
-        const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, version);
+        const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, tag !== null && tag !== void 0 ? tag : version);
         if (release) {
             const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
@@ -10992,9 +10992,9 @@ function doPublish(octokit, release, debug, qmod, version) {
 }
 function publishRun(params) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = params;
+        const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
         const octokit = github.getOctokit(token);
-        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
+        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
         yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
     });
 }
@@ -11160,6 +11160,7 @@ function getActionParameters() {
     const publish = core.getBooleanInput('publish');
     const eagerPublish = core.getBooleanInput('eager_publish');
     const version = stringOrUndefined(core.getInput('version'));
+    const tag = stringOrUndefined(core.getInput('tag'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
@@ -11179,6 +11180,7 @@ function getActionParameters() {
         token: myToken,
         publish,
         version,
+        tag,
         cache,
         cacheLockfile,
         restore,

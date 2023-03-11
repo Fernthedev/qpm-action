@@ -13,6 +13,9 @@ inputs:
   version:
     required: false
     description: 'Specifies version to publish. Requires publish'
+  tag:
+    required: false
+    description: 'Specifies tag to use for github release. Defaults to version'
   cache:
     required: false
     description: 'Specifies if the action should handle caches'

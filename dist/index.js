@@ -100,6 +100,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7733));
 const github = __importStar(__nccwpck_require__(3695));
@@ -112,6 +115,7 @@ const const_1 = __nccwpck_require__(7722);
 const utils_1 = __nccwpck_require__(6548);
 const qpmf_1 = __nccwpck_require__(386);
 const publish_1 = __nccwpck_require__(222);
+const strip_ansi_1 = __importDefault(__nccwpck_require__(971));
 function downloadQpm(octokit, token) {
     return __awaiter(this, void 0, void 0, function* () {
         const expectedArtifactName = (0, api_1.getQPM_RustExecutableName)();
@@ -154,7 +158,7 @@ function run() {
             const { restore, token } = parameters;
             const octokit = github.getOctokit(token);
             const qpmRustPath = yield downloadQpm(octokit, token);
-            const cachePathOutput = (yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout;
+            const cachePathOutput = (0, strip_ansi_1.default)((yield (0, utils_1.githubExecAsync)(`${qpmRustPath} ${const_1.QPM_COMMAND_CACHE_PATH}`)).stdout);
             let paths = [];
             let cacheKey;
             const key = 'qpm-cache-';
@@ -244,7 +248,7 @@ const core = __importStar(__nccwpck_require__(7733));
 const github = __importStar(__nccwpck_require__(3695));
 const qpmf_1 = __nccwpck_require__(386);
 const const_1 = __nccwpck_require__(7722);
-function doPublish(octokit, release, debug, qmod, version) {
+function doPublish(octokit, release, debug, qmod, version, tag) {
     var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         core.info('Publishing');
@@ -262,7 +266,7 @@ function doPublish(octokit, release, debug, qmod, version) {
         const branch = `version/v${version.replace(/\./g, '_')}`;
         qpmFile.config.info.additionalData.branchName = branch;
         const additionalData = qpmFile.config.info.additionalData;
-        const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, version);
+        const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, tag !== null && tag !== void 0 ? tag : version);
         if (release) {
             const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : `lib${qpmFile.config.info.id}_${qpmFile.config.info.version.replace(/\./g, '_')}.so`;
             qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
@@ -310,9 +314,9 @@ function doPublish(octokit, release, debug, qmod, version) {
 }
 function publishRun(params) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken } = params;
+        const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
         const octokit = github.getOctokit(token);
-        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version);
+        yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
         yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
     });
 }
@@ -478,6 +482,7 @@ function getActionParameters() {
     const publish = core.getBooleanInput('publish');
     const eagerPublish = core.getBooleanInput('eager_publish');
     const version = stringOrUndefined(core.getInput('version'));
+    const tag = stringOrUndefined(core.getInput('tag'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
@@ -497,6 +502,7 @@ function getActionParameters() {
         token: myToken,
         publish,
         version,
+        tag,
         cache,
         cacheLockfile,
         restore,
