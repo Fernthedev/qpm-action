@@ -132,7 +132,20 @@ function downloadQpm(octokit, token) {
             core.addPath(cachedPath);
             return path.join(cachedPath, 'qpm-rust');
         }
-        const url = `https://nightly.link/${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}/workflows/${const_1.QPM_REPOSITORY_WORKFLOW_NAME}/${const_1.QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`;
+        const listedArtifacts = yield octokit.rest.actions.listArtifactsForRepo({
+            owner: const_1.QPM_REPOSITORY_OWNER,
+            repo: const_1.QPM_REPOSITORY_NAME
+        });
+        const artifact = listedArtifacts.data.artifacts.find(e => {
+            var _a;
+            return e.name === expectedArtifactName &&
+                ((_a = e.workflow_run) === null || _a === void 0 ? void 0 : _a.head_branch) === const_1.QPM_REPOSITORY_BRANCH;
+        });
+        if (!artifact) {
+            core.error(`No artifact found for ${const_1.QPM_REPOSITORY_OWNER}/${const_1.QPM_REPOSITORY_NAME}@${const_1.QPM_REPOSITORY_BRANCH} `);
+        }
+        const url = artifact.archive_download_url;
+        // const url = `https://nightly.link/${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}/workflows/${QPM_REPOSITORY_WORKFLOW_NAME}/${QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`
         core.debug(`Downloading from ${url}`);
         const qpmTool = yield tc.downloadTool(url, undefined, `Bearer ${token}`);
         const qpmToolExtract = yield tc.extractZip(qpmTool);

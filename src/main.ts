@@ -44,7 +44,23 @@ async function downloadQpm(
     return path.join(cachedPath, 'qpm-rust')
   }
 
-  const url = `https://nightly.link/${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}/workflows/${QPM_REPOSITORY_WORKFLOW_NAME}/${QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`
+  const listedArtifacts = await octokit.rest.actions.listArtifactsForRepo({
+    owner: QPM_REPOSITORY_OWNER,
+    repo: QPM_REPOSITORY_NAME
+  })
+  const artifact = listedArtifacts.data.artifacts.find(
+    e =>
+      e.name === expectedArtifactName &&
+      e.workflow_run?.head_branch === QPM_REPOSITORY_BRANCH
+  )
+  if (!artifact) {
+    core.error(
+      `No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH} `
+    ) 
+  }
+
+  const url = artifact!.archive_download_url
+  // const url = `https://nightly.link/${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}/workflows/${QPM_REPOSITORY_WORKFLOW_NAME}/${QPM_REPOSITORY_BRANCH}/${expectedArtifactName}.zip`
 
   core.debug(`Downloading from ${url}`)
 
@@ -107,7 +123,7 @@ async function run(): Promise<void> {
       const qpm = await readQPM<QPMPackage>(qpmFilePath)
 
       qpm.info.version = version
-      
+
       writeQPM(qpmFilePath, qpm)
     }
 
@@ -118,7 +134,6 @@ async function run(): Promise<void> {
     if (parameters.cache) {
       await cache.saveCache(paths, cacheKey ?? key)
     }
-
 
     if (parameters.eagerPublish) {
       publishRun(parameters)
