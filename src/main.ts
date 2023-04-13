@@ -81,7 +81,7 @@ async function downloadQpm(
 
   const execFile = path.join(cachedPath, 'qpm')
   await githubExecAsync(`chmod +x ${execFile}`)
-  await githubExecAsync(`alias qpm-rust='qpm'`)
+  await githubExecAsync(`ln ${execFile} ${path.join(cachedPath, "qpm-rust")}`)
 
   return execFile
 }

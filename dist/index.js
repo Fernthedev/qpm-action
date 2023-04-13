@@ -161,7 +161,7 @@ function downloadQpm(octokit, token) {
         }));
         const execFile = path.join(cachedPath, 'qpm');
         yield (0, utils_1.githubExecAsync)(`chmod +x ${execFile}`);
-        yield (0, utils_1.githubExecAsync)(`alias qpm-rust='qpm'`);
+        yield (0, utils_1.githubExecAsync)(`ln ${execFile} ${path.join(cachedPath, "qpm-rust")}`);
         return execFile;
     });
 }
