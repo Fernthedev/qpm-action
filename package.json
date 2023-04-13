@@ -1,5 +1,5 @@
 {
-  "name": "qpm-rust-setup",
+  "name": "qpm-setup",
   "version": "0.0.0",
   "private": true,
   "description": "TypeScript template action",
@@ -21,7 +21,7 @@
     "actions",
     "node",
     "setup",
-    "qpm-rust",
+    "qpm",
     "qpm",
     "quest",
     "oculus"

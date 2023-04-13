@@ -48,7 +48,7 @@ async function doPublish(
   if (release) {
     const versionedName = `lib${fileId}_${fixedFileVersion}.so`
     const name = additionalData.overrideSoName ?? versionedName
-      
+
     qpmFile.config.info.additionalData.soLink = `${download}/${name}`
   }
 
@@ -60,7 +60,7 @@ async function doPublish(
 
     const name =
       additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName
-    
+
     qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`
   }
 
@@ -146,7 +146,5 @@ export async function publishRun(
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
-  await githubExecAsync(
-    `qpm-rust ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`
-  )
+  await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`)
 }

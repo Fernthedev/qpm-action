@@ -6,5 +6,5 @@ export function getQPM_RustExecutableName() {
   if (os === 'win32') os = 'windows'
   if (os === 'darwin') os = 'macos'
 
-  return `${os}-qpm-rust`
+  return `${os}-qpm`
 }

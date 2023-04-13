@@ -36,12 +36,12 @@ async function downloadQpm(
   })
 
   const qpmVersion = branch.data.commit.sha
-  let cachedPath = tc.find('qpm-rust', qpmVersion)
+  let cachedPath = tc.find('qpm', qpmVersion)
 
   if (fs.existsSync(cachedPath)) {
-    core.debug('Using existing qpm-rust tool cached')
+    core.debug('Using existing qpm tool cached')
     core.addPath(cachedPath)
-    return path.join(cachedPath, 'qpm-rust')
+    return path.join(cachedPath, 'qpm')
   }
 
   const listedArtifacts = await octokit.rest.actions.listArtifactsForRepo({
@@ -79,8 +79,9 @@ async function downloadQpm(
     return Promise.resolve()
   })
 
-  const execFile = path.join(cachedPath, 'qpm-rust')
+  const execFile = path.join(cachedPath, 'qpm')
   await githubExecAsync(`chmod +x ${execFile}`)
+  await githubExecAsync(`alias qpm-rust='qpm'`)
 
   return execFile
 }
@@ -109,7 +110,7 @@ async function run(): Promise<void> {
         .trim()
 
       paths = [cachePath]
-      const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-']
+      const restoreKeys = ['qpm-cache-', 'qpm-cache-']
       cacheKey = await cache.restoreCache(
         paths,
         key,

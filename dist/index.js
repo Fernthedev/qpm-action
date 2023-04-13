@@ -38,7 +38,7 @@ function getQPM_RustExecutableName() {
         os = 'windows';
     if (os === 'darwin')
         os = 'macos';
-    return `${os}-qpm-rust`;
+    return `${os}-qpm`;
 }
 exports.getQPM_RustExecutableName = getQPM_RustExecutableName;
 
@@ -126,11 +126,11 @@ function downloadQpm(octokit, token) {
             repo: const_1.QPM_REPOSITORY_NAME
         });
         const qpmVersion = branch.data.commit.sha;
-        let cachedPath = tc.find('qpm-rust', qpmVersion);
+        let cachedPath = tc.find('qpm', qpmVersion);
         if (fs.existsSync(cachedPath)) {
-            core.debug('Using existing qpm-rust tool cached');
+            core.debug('Using existing qpm tool cached');
             core.addPath(cachedPath);
-            return path.join(cachedPath, 'qpm-rust');
+            return path.join(cachedPath, 'qpm');
         }
         const listedArtifacts = yield octokit.rest.actions.listArtifactsForRepo({
             owner: const_1.QPM_REPOSITORY_OWNER,
@@ -159,8 +159,9 @@ function downloadQpm(octokit, token) {
             }
             return Promise.resolve();
         }));
-        const execFile = path.join(cachedPath, 'qpm-rust');
+        const execFile = path.join(cachedPath, 'qpm');
         yield (0, utils_1.githubExecAsync)(`chmod +x ${execFile}`);
+        yield (0, utils_1.githubExecAsync)(`alias qpm-rust='qpm'`);
         return execFile;
     });
 }
@@ -183,7 +184,7 @@ function run() {
                     // .substring(2) // substring to ignore fancy color
                     .trim();
                 paths = [cachePath];
-                const restoreKeys = ['qpm-cache-', 'qpm-rust-cache-'];
+                const restoreKeys = ['qpm-cache-', 'qpm-cache-'];
                 cacheKey = yield cache.restoreCache(paths, key, restoreKeys, undefined, true);
             }
             if (version) {
@@ -331,7 +332,7 @@ function publishRun(params) {
         const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
         const octokit = github.getOctokit(token);
         yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-        yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
+        yield (0, utils_1.githubExecAsync)(`qpm ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
     });
 }
 exports.publishRun = publishRun;

@@ -11000,7 +11000,7 @@ function publishRun(params) {
         const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
         const octokit = github.getOctokit(token);
         yield doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-        yield (0, utils_1.githubExecAsync)(`qpm-rust ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
+        yield (0, utils_1.githubExecAsync)(`qpm ${const_1.QPM_COMMAND_PUBLISH} "${publishToken !== null && publishToken !== void 0 ? publishToken : ''}"`);
     });
 }
 exports.publishRun = publishRun;

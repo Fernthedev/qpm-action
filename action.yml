@@ -1,5 +1,5 @@
 name: 'QPM Rust Action'
-description: 'Provides utilities for qpm-rust CI'
+description: 'Provides utilities for qpm CI'
 author: 'Fernthedev'
 inputs:
   publish:
