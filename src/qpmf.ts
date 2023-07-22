@@ -1,4 +1,5 @@
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
+import * as fsOld from 'fs'
 
 export interface QPMSharedPackage {
   config: QPMPackage
@@ -22,33 +23,16 @@ export interface QPMPackage {
 }
 
 export async function readQPM<T extends QPMPackage | QPMSharedPackage>(
-  file: fs.PathOrFileDescriptor
+  file: fsOld.PathLike
 ): Promise<T> {
-  const fileData: string = await new Promise((resolve, reject) => {
-    fs.readFile(file, undefined, (err, data) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(data.toString())
-      }
-    })
-  })
 
-  return JSON.parse(fileData)
+  return JSON.parse((await fs.readFile(file, undefined)).toString())
 }
 
 export async function writeQPM(
-  file: fs.PathOrFileDescriptor,
+  file: fsOld.PathLike,
   qpm: QPMPackage | QPMSharedPackage
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const qpmStr = JSON.stringify(qpm)
-    fs.writeFile(file, qpmStr, err => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve()
-      }
-    })
-  })
+  const qpmStr = JSON.stringify(qpm)
+  await fs.writeFile(file, qpmStr)
 }

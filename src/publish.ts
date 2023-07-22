@@ -25,17 +25,19 @@ async function doPublish(
   // process.env.GITHUB_WORKSPACE!,
   // 'qpm.shared.json'
   // )
-  const qpmFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
+  const qpmSharedFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
 
   if (version) {
-    qpmFile.config.info.version = version
+    core.info(`Overwriting version with provided ${version}`)
+    qpmSharedFile.config.info.version = version
   }
-  version ??= qpmFile.config.info.version
+  version ??= qpmSharedFile.config.info.version
+  core.info(`Using version ${version} for publishing`)
 
   const branch = `version/v${version.replace(/\./g, '_')}`
-  qpmFile.config.info.additionalData.branchName = branch
+  qpmSharedFile.config.info.additionalData.branchName = branch
 
-  const additionalData = qpmFile.config.info.additionalData
+  const additionalData = qpmSharedFile.config.info.additionalData
 
   const download = getReleaseDownloadLink(
     github.context.repo.owner,
@@ -43,13 +45,13 @@ async function doPublish(
     tag ?? version
   )
 
-  const fileId = qpmFile.config.info.id
-  const fixedFileVersion = qpmFile.config.info.version.replace(/\./g, '_')
+  const fileId = qpmSharedFile.config.info.id
+  const fixedFileVersion = version.replace(/\./g, '_')
   if (release) {
     const versionedName = `lib${fileId}_${fixedFileVersion}.so`
     const name = additionalData.overrideSoName ?? versionedName
 
-    qpmFile.config.info.additionalData.soLink = `${download}/${name}`
+    qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`
   }
 
   if (debug) {
@@ -61,14 +63,14 @@ async function doPublish(
     const name =
       additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName
 
-    qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`
+    qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`
   }
 
   if (qmod) {
-    qpmFile.config.info.additionalData.modLink = `${download}/${qmod}`
+    qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`
   }
 
-  await writeQPM(qpmSharedPath, qpmFile)
+  await writeQPM(qpmSharedPath, qpmSharedFile)
 
   const git = octokit.rest.git
 
@@ -104,7 +106,7 @@ async function doPublish(
       ...github.context.repo,
       tree: [
         {
-          content: JSON.stringify(qpmFile),
+          content: JSON.stringify(qpmSharedFile),
           path: qpmSharedPath,
           mode: '100644'
         }

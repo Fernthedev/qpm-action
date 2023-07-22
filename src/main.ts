@@ -121,6 +121,7 @@ async function run(): Promise<void> {
     }
 
     if (version) {
+      core.info(`Using version ${version}`)
       const qpm = await readQPM<QPMPackage>(qpmFilePath)
 
       qpm.info.version = version

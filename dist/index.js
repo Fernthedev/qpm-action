@@ -188,6 +188,7 @@ function run() {
                 cacheKey = yield cache.restoreCache(paths, key, restoreKeys, undefined, true);
             }
             if (version) {
+                core.info(`Using version ${version}`);
                 const qpm = yield (0, qpmf_1.readQPM)(qpmFilePath);
                 qpm.info.version = version;
                 (0, qpmf_1.writeQPM)(qpmFilePath, qpm);
@@ -268,32 +269,34 @@ function doPublish(octokit, release, debug, qmod, version, tag) {
         // process.env.GITHUB_WORKSPACE!,
         // 'qpm.shared.json'
         // )
-        const qpmFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
+        const qpmSharedFile = yield (0, qpmf_1.readQPM)(qpmSharedPath);
         if (version) {
-            qpmFile.config.info.version = version;
+            core.info(`Overwriting version with provided ${version}`);
+            qpmSharedFile.config.info.version = version;
         }
-        version !== null && version !== void 0 ? version : (version = qpmFile.config.info.version);
+        version !== null && version !== void 0 ? version : (version = qpmSharedFile.config.info.version);
+        core.info(`Using version ${version} for publishing`);
         const branch = `version/v${version.replace(/\./g, '_')}`;
-        qpmFile.config.info.additionalData.branchName = branch;
-        const additionalData = qpmFile.config.info.additionalData;
+        qpmSharedFile.config.info.additionalData.branchName = branch;
+        const additionalData = qpmSharedFile.config.info.additionalData;
         const download = (0, utils_1.getReleaseDownloadLink)(github.context.repo.owner, github.context.repo.repo, tag !== null && tag !== void 0 ? tag : version);
-        const fileId = qpmFile.config.info.id;
-        const fixedFileVersion = qpmFile.config.info.version.replace(/\./g, '_');
+        const fileId = qpmSharedFile.config.info.id;
+        const fixedFileVersion = version.replace(/\./g, '_');
         if (release) {
             const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
             const name = (_a = additionalData.overrideSoName) !== null && _a !== void 0 ? _a : versionedName;
-            qpmFile.config.info.additionalData.soLink = `${download}/${name}`;
+            qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`;
         }
         if (debug) {
             const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
             const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
             const name = (_c = (_b = additionalData.overrideDebugSoName) !== null && _b !== void 0 ? _b : nameOverride) !== null && _c !== void 0 ? _c : debugVersionedName;
-            qpmFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
+            qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
         }
         if (qmod) {
-            qpmFile.config.info.additionalData.modLink = `${download}/${qmod}`;
+            qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`;
         }
-        yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmFile);
+        yield (0, qpmf_1.writeQPM)(qpmSharedPath, qpmSharedFile);
         const git = octokit.rest.git;
         yield core.group('Publish', () => __awaiter(this, void 0, void 0, function* () {
             // create branch
@@ -315,7 +318,7 @@ function doPublish(octokit, release, debug, qmod, version, tag) {
             // create commit
             const newTree = yield git.createTree(Object.assign(Object.assign({}, github.context.repo), { tree: [
                     {
-                        content: JSON.stringify(qpmFile),
+                        content: JSON.stringify(qpmSharedFile),
                         path: qpmSharedPath,
                         mode: '100644'
                     }
@@ -379,36 +382,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.writeQPM = exports.readQPM = void 0;
-const fs = __importStar(__nccwpck_require__(7147));
+const fs = __importStar(__nccwpck_require__(3292));
 function readQPM(file) {
     return __awaiter(this, void 0, void 0, function* () {
-        const fileData = yield new Promise((resolve, reject) => {
-            fs.readFile(file, undefined, (err, data) => {
-                if (err) {
-                    reject(err);
-                }
-                else {
-                    resolve(data.toString());
-                }
-            });
-        });
-        return JSON.parse(fileData);
+        return JSON.parse((yield fs.readFile(file, undefined)).toString());
     });
 }
 exports.readQPM = readQPM;
 function writeQPM(file, qpm) {
     return __awaiter(this, void 0, void 0, function* () {
-        return new Promise((resolve, reject) => {
-            const qpmStr = JSON.stringify(qpm);
-            fs.writeFile(file, qpmStr, err => {
-                if (err) {
-                    reject(err);
-                }
-                else {
-                    resolve();
-                }
-            });
-        });
+        const qpmStr = JSON.stringify(qpm);
+        yield fs.writeFile(file, qpmStr);
     });
 }
 exports.writeQPM = writeQPM;
@@ -62101,6 +62085,14 @@ module.exports = require("events");
 
 "use strict";
 module.exports = require("fs");
+
+/***/ }),
+
+/***/ 3292:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("fs/promises");
 
 /***/ }),
 
