@@ -3,6 +3,11 @@ import { getExecOutput as githubExec } from '@actions/exec'
 import * as core from '@actions/core'
 import stripAnsi from 'strip-ansi'
 
+export enum PublishMode {
+  now = "now",
+  late = "late"
+}
+
 export function getReleaseDownloadLink(user: string, repo: string, version: string) {
   return `https://github.com/${user}/${repo}/releases/download/${version}`
 }
@@ -30,8 +35,7 @@ function stringOrUndefined(str: string): string | undefined {
 }
 
 export function getActionParameters() {
-  const publish: boolean = core.getBooleanInput('publish')
-  const eagerPublish: boolean = core.getBooleanInput('eager_publish')
+  const publish: PublishMode | undefined = stringOrUndefined('publish') as PublishMode
   const version: string | undefined = stringOrUndefined(core.getInput('version'))
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
@@ -62,6 +66,5 @@ export function getActionParameters() {
     cacheLockfile,
     restore,
     publishToken,
-    eagerPublish
   }
 }

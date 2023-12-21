@@ -15,7 +15,7 @@ import {
   QPM_REPOSITORY_WORKFLOW_NAME
 } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
-import { getActionParameters, githubExecAsync } from './utils.js'
+import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
 import { QPMPackage, readQPM, writeQPM } from './qpm_file.js'
 import { publishRun } from './publish.js'
 import stripAnsi from 'strip-ansi'
@@ -87,22 +87,20 @@ export async function run(): Promise<void> {
 
     const cachePathOutput = stripAnsi((await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout)
 
-    let paths: string[] = []
+    // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
+    const cachePath = cachePathOutput
+      .split('Config path is: ')[1]
+      .trim()
+
+    const paths = [cachePath]
     let cacheKey: string | undefined
     const key = 'qpm-cache-'
-
     if (parameters.cache) {
-      // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
-      const cachePath = cachePathOutput
-        .split('Config path is: ')[1]
-        // .substring(2) // substring to ignore fancy color
-        .trim()
-
-      paths = [cachePath]
       const restoreKeys = ['qpm-cache-', 'qpm-cache-']
       cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }
 
+    // Update version
     if (version) {
       core.info(`Using version ${version}`)
       const qpm = await readQPM<QPMPackage>(qpmFilePath)
@@ -120,7 +118,7 @@ export async function run(): Promise<void> {
       await cache.saveCache(paths, cacheKey ?? key)
     }
 
-    if (parameters.eagerPublish) {
+    if (parameters.publish == PublishMode.now) {
       publishRun(parameters)
     }
   } catch (error) {

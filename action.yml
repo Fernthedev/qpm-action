@@ -2,15 +2,9 @@ name: 'QPM Action'
 description: 'Provides utilities for qpm CI'
 author: 'Fernthedev'
 inputs:
-  
   publish:
     required: false
-    description: 'Denotes if this will publish to QPM qpackages.com'
-    default: 'false'
-  eager_publish:
-    required: false
-    description: 'Publishes at end of action rather than at end of workflow'
-    default: 'false'
+    description: 'Denotes if this will publish to QPM qpackages.com. Possible values are: "late", "now" or undefined. Late publish will only run if action ran with success'
 
   version:
     required: false
@@ -19,6 +13,10 @@ inputs:
     required: false
     description: 'Specifies tag to use for github release. Defaults to version'
 
+  restore:
+    required: false
+    description: 'Whether restore should be called. This will use the cache if possible'
+    default: 'true'
   cache:
     required: false
     description: 'Specifies if the action should handle caches'
@@ -40,11 +38,6 @@ inputs:
   qpm_qmod:
     required: false
     description: 'Specifies the path for the qmod'
-
-  restore:
-    required: false
-    description: 'Whether restore should be called'
-    default: 'true'
 
   workflow_token:
     required: false

@@ -1,11 +1,8 @@
-import { GitHub } from '@actions/github/lib/utils.js'
-import { getOctokit } from '@actions/github'
-
 import { publishRun } from './publish.js'
-import { getActionParameters } from './utils.js'
+import { PublishMode, getActionParameters } from './utils.js'
 
 const parameters = getActionParameters()
 
-if (parameters.publish) {
+if (parameters.publish === PublishMode.late) {
   publishRun(parameters)
 }
