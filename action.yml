@@ -6,6 +6,10 @@ inputs:
     required: false
     description: 'Denotes if this will publish to QPM qpackages.com. Possible values are: "late", "now" or undefined. Late publish will only run if action ran with success'
 
+  qpm_version:
+    required: false
+    description: 'The version of QPM to download. Defaults to latest release. Use version@^1.0.0 for release or ref@main for main'
+
   version:
     required: false
     description: 'Specifies version to publish. Requires publish'

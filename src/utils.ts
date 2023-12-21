@@ -36,6 +36,7 @@ function stringOrUndefined(str: string): string | undefined {
 
 export function getActionParameters() {
   const publish: PublishMode | undefined = stringOrUndefined('publish') as PublishMode
+  const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))
   const version: string | undefined = stringOrUndefined(core.getInput('version'))
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
@@ -58,6 +59,7 @@ export function getActionParameters() {
     qpmDebugBin,
     qpmReleaseBin,
     qpmQmod,
+    qpmVersion,
     token: myToken,
     publish,
     version,
