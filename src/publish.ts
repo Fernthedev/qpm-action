@@ -1,14 +1,10 @@
-import {
-  getActionParameters,
-  getReleaseDownloadLink,
-  githubExecAsync
-} from './utils'
+import { getActionParameters, getReleaseDownloadLink, githubExecAsync } from './utils.js'
 
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import {GitHub} from '@actions/github/lib/utils'
-import {QPMSharedPackage, readQPM, writeQPM} from './qpmf'
-import {QPM_COMMAND_PUBLISH} from './const'
+import { QPMSharedPackage, readQPM, writeQPM } from './qpm_file.js'
+import { QPM_COMMAND_PUBLISH } from './constants.js'
+import { GitHub } from '@actions/github/lib/utils.js'
 
 async function doPublish(
   octokit: InstanceType<typeof GitHub>,
@@ -39,11 +35,7 @@ async function doPublish(
 
   const additionalData = qpmSharedFile.config.info.additionalData
 
-  const download = getReleaseDownloadLink(
-    github.context.repo.owner,
-    github.context.repo.repo,
-    tag ?? version
-  )
+  const download = getReleaseDownloadLink(github.context.repo.owner, github.context.repo.repo, tag ?? version)
 
   const fileId = qpmSharedFile.config.info.id
   const fixedFileVersion = version.replace(/\./g, '_')
@@ -55,13 +47,11 @@ async function doPublish(
   }
 
   if (debug) {
-    const nameOverride =
-      additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`
+    const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`
 
     const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`
 
-    const name =
-      additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName
+    const name = additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName
 
     qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`
   }
@@ -132,18 +122,8 @@ async function doPublish(
   // do github stuff
 }
 
-export async function publishRun(
-  params: ReturnType<typeof getActionParameters>
-): Promise<void> {
-  const {
-    token,
-    qpmDebugBin,
-    qpmQmod,
-    qpmReleaseBin,
-    version,
-    publishToken,
-    tag
-  } = params
+export async function publishRun(params: ReturnType<typeof getActionParameters>): Promise<void> {
+  const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params
 
   const octokit = github.getOctokit(token)
 

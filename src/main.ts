@@ -5,7 +5,7 @@ import * as cache from '@actions/cache'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import {getQPM_RustExecutableName} from './api'
+import { getQPM_RustExecutableName } from './api.js'
 import {
   QPM_COMMAND_CACHE_PATH,
   QPM_COMMAND_RESTORE,
@@ -13,21 +13,16 @@ import {
   QPM_REPOSITORY_NAME,
   QPM_REPOSITORY_OWNER,
   QPM_REPOSITORY_WORKFLOW_NAME
-} from './const'
-import {GitHub} from '@actions/github/lib/utils'
-import {getActionParameters, githubExecAsync} from './utils'
-import {QPMPackage, readQPM, writeQPM} from './qpmf'
-import {publishRun} from './publish'
+} from './constants.js'
+import { GitHub } from '@actions/github/lib/utils.js'
+import { getActionParameters, githubExecAsync } from './utils.js'
+import { QPMPackage, readQPM, writeQPM } from './qpm_file.js'
+import { publishRun } from './publish.js'
 import stripAnsi from 'strip-ansi'
 
-async function downloadQpm(
-  octokit: InstanceType<typeof GitHub>,
-  token: string
-): Promise<string | undefined> {
+async function downloadQpm(octokit: InstanceType<typeof GitHub>, token: string): Promise<string | undefined> {
   const expectedArtifactName = getQPM_RustExecutableName()
-  core.debug(
-    `Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`
-  )
+  core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   const branch = await octokit.rest.repos.getBranch({
     branch: QPM_REPOSITORY_BRANCH,
@@ -49,14 +44,10 @@ async function downloadQpm(
     repo: QPM_REPOSITORY_NAME
   })
   const artifact = listedArtifacts.data.artifacts.find(
-    e =>
-      e.name === expectedArtifactName &&
-      e.workflow_run?.head_branch === QPM_REPOSITORY_BRANCH
+    e => e.name === expectedArtifactName && e.workflow_run?.head_branch === QPM_REPOSITORY_BRANCH
   )
   if (!artifact) {
-    core.error(
-      `No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH} `
-    ) 
+    core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH} `)
   }
 
   const url = artifact!.archive_download_url
@@ -81,22 +72,20 @@ async function downloadQpm(
 
   const execFile = path.join(cachedPath, 'qpm')
   await githubExecAsync(`chmod +x ${execFile}`)
-  await githubExecAsync(`ln ${execFile} ${path.join(cachedPath, "qpm-rust")}`)
+  await githubExecAsync(`ln ${execFile} ${path.join(cachedPath, 'qpm-rust')}`)
 
   return execFile
 }
 
-async function run(): Promise<void> {
+export async function run(): Promise<void> {
   try {
     const qpmFilePath = 'qpm.json'
     const parameters = getActionParameters()
-    const {restore, token, version} = parameters
+    const { restore, token, version } = parameters
     const octokit = github.getOctokit(token)
     const qpmRustPath = await downloadQpm(octokit, token)
 
-    const cachePathOutput = stripAnsi(
-      (await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout
-    )
+    const cachePathOutput = stripAnsi((await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout)
 
     let paths: string[] = []
     let cacheKey: string | undefined
@@ -111,13 +100,7 @@ async function run(): Promise<void> {
 
       paths = [cachePath]
       const restoreKeys = ['qpm-cache-', 'qpm-cache-']
-      cacheKey = await cache.restoreCache(
-        paths,
-        key,
-        restoreKeys,
-        undefined,
-        true
-      )
+      cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }
 
     if (version) {
@@ -145,5 +128,3 @@ async function run(): Promise<void> {
     core.isDebug
   }
 }
-
-run()

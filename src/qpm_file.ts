@@ -14,25 +14,19 @@ export interface QPMPackage {
       branchName?: string
       headersOnly?: boolean
       overrideSoName?: string
-      overrideDebugSoName?: string,
-      soLink?: string,
-      debugSoLink?: string,
+      overrideDebugSoName?: string
+      soLink?: string
+      debugSoLink?: string
       modLink?: string
     }
   }
 }
 
-export async function readQPM<T extends QPMPackage | QPMSharedPackage>(
-  file: fsOld.PathLike
-): Promise<T> {
-
+export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {
   return JSON.parse((await fs.readFile(file, undefined)).toString())
 }
 
-export async function writeQPM(
-  file: fsOld.PathLike,
-  qpm: QPMPackage | QPMSharedPackage
-): Promise<void> {
+export async function writeQPM(file: fsOld.PathLike, qpm: QPMPackage | QPMSharedPackage): Promise<void> {
   const qpmStr = JSON.stringify(qpm)
   await fs.writeFile(file, qpmStr)
 }
