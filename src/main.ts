@@ -5,7 +5,7 @@ import * as cache from '@actions/cache'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { getQPM_ArtifactExecutableName } from './api.js'
+import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
 import {
   QPM_COMMAND_CACHE_PATH,
   QPM_COMMAND_RESTORE,
@@ -174,7 +174,7 @@ async function downloadQpmVersion(
   }
 
   // Get the expected artifact name for QPM
-  const expectedArtifactName = getQPM_ArtifactExecutableName()
+  const expectedArtifactName = getQPM_ReleaseExecutableName()
   core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   // List artifacts for the QPM repository
