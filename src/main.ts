@@ -11,8 +11,7 @@ import {
   QPM_COMMAND_RESTORE,
   QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
-  QPM_REPOSITORY_OWNER,
-  QPM_REPOSITORY_WORKFLOW_NAME
+  QPM_REPOSITORY_OWNER
 } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
@@ -234,7 +233,7 @@ export async function run(): Promise<void> {
       qpmRustPath = await downloadQpmVersion(octokit, token, versionRange)
     } else if (qpmVersion.startsWith('ref@')) {
       let ref: string | undefined = qpmVersion.split('ref@')[1]
-      if (ref.trim() === '') ref = undefined;
+      if (ref.trim() === '') ref = undefined
 
       qpmRustPath = await downloadQpmBleeding(octokit, token, ref)
     } else {

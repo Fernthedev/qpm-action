@@ -4,8 +4,8 @@ import * as core from '@actions/core'
 import stripAnsi from 'strip-ansi'
 
 export enum PublishMode {
-  now = "now",
-  late = "late"
+  now = 'now',
+  late = 'late'
 }
 
 export function getReleaseDownloadLink(user: string, repo: string, version: string) {
@@ -67,6 +67,6 @@ export function getActionParameters() {
     cache,
     cacheLockfile,
     restore,
-    publishToken,
+    publishToken
   }
 }
