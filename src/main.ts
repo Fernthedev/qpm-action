@@ -193,7 +193,7 @@ async function downloadQpmVersion(
 
   // Download the QPM artifact
   const url = artifact!.url
-  core.debug(`Downloading from ${url}`)
+  core.info(`Downloading from ${url}`)
 
   const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
   const qpmToolExtract = await tc.extractZip(qpmTool)

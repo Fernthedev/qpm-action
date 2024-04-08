@@ -91719,7 +91719,7 @@ async function downloadQpmVersion(octokit, token, versionReq) {
     }
     // Download the QPM artifact
     const url = artifact.url;
-    core.debug(`Downloading from ${url}`);
+    core.info(`Downloading from ${url}`);
     const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
     const qpmToolExtract = await tool_cache.extractZip(qpmTool);
     cachedPath = await tool_cache.cacheFile(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag);
