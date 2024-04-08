@@ -91718,7 +91718,7 @@ async function downloadQpmVersion(octokit, token, versionReq) {
         core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${qpmTargetReleaseTag}`);
     }
     // Download the QPM artifact
-    const url = artifact.url;
+    const url = artifact.browser_download_url;
     core.info(`Downloading from ${url}`);
     const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
     const qpmToolExtract = await tool_cache.extractZip(qpmTool);
