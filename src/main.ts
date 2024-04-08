@@ -196,12 +196,16 @@ async function downloadQpmVersion(
   core.info(`Downloading from ${url}`)
 
   const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
+  core.info(`Downloaded to ${qpmTool}, extracting`)
+
   const qpmToolExtract = await tc.extractZip(qpmTool)
+
+  core.info(`Extracted to ${qpmToolExtract}, adding to cache`)
   cachedPath = await tc.cacheFile(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag)
 
   // Add the QPM path to the system path
   core.addPath(cachedPath)
-  core.debug(`Added ${cachedPath} to path`)
+  core.info(`Added ${cachedPath} to path`)
 
   // Display information about cached files
   await core.group('cache files', async () => {

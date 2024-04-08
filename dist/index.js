@@ -91721,11 +91721,13 @@ async function downloadQpmVersion(octokit, token, versionReq) {
     const url = artifact.browser_download_url;
     core.info(`Downloading from ${url}`);
     const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
+    core.info(`Downloaded to ${qpmTool}, extracting`);
     const qpmToolExtract = await tool_cache.extractZip(qpmTool);
+    core.info(`Extracted to ${qpmToolExtract}, adding to cache`);
     cachedPath = await tool_cache.cacheFile(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag);
     // Add the QPM path to the system path
     core.addPath(cachedPath);
-    core.debug(`Added ${cachedPath} to path`);
+    core.info(`Added ${cachedPath} to path`);
     // Display information about cached files
     await core.group('cache files', async () => {
         for (const file of external_fs_.readdirSync(cachedPath)) {
