@@ -112,7 +112,7 @@ async function downloadQpmBleeding(
 
   const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
   const qpmToolExtract = await tc.extractZip(qpmTool)
-  cachedPath = await tc.cacheFile(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion)
+  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion)
 
   // Add the QPM path to the system path
   core.addPath(cachedPath)
@@ -201,7 +201,7 @@ async function downloadQpmVersion(
   const qpmToolExtract = await tc.extractZip(qpmTool)
 
   core.info(`Extracted to ${qpmToolExtract}, adding to cache`)
-  cachedPath = await tc.cacheFile(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag)
+  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag)
 
   // Add the QPM path to the system path
   core.addPath(cachedPath)
