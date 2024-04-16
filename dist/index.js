@@ -92058,12 +92058,14 @@ async function writeQPM(file, qpm) {
 async function doPublish(octokit, release, debug, qmod, version, tag) {
     core.info('Publishing');
     const qpmSharedPath = 'qpm.shared.json';
+    const qpmPath = 'qpm.json';
     //path.join(
     //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     // process.env.GITHUB_WORKSPACE!,
     // 'qpm.shared.json'
     // )
     const qpmSharedFile = await readQPM(qpmSharedPath);
+    const qpmFile = await readQPM(qpmPath);
     if (version) {
         core.info(`Overwriting version with provided ${version}`);
         qpmSharedFile.config.info.version = version;
@@ -92124,6 +92126,11 @@ async function doPublish(octokit, release, debug, qmod, version, tag) {
                 {
                     content: JSON.stringify(qpmSharedFile),
                     path: qpmSharedPath,
+                    mode: '100644'
+                },
+                {
+                    content: JSON.stringify(qpmFile),
+                    path: qpmPath,
                     mode: '100644'
                 }
             ],

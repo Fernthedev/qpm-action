@@ -2,7 +2,7 @@ import { getActionParameters, getReleaseDownloadLink, githubExecAsync } from './
 
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import { QPMSharedPackage, readQPM, writeQPM } from './qpm_file.js'
+import { QPMPackage, QPMSharedPackage, readQPM, writeQPM } from './qpm_file.js'
 import { QPM_COMMAND_PUBLISH } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 
@@ -16,12 +16,14 @@ async function doPublish(
 ): Promise<void> {
   core.info('Publishing')
   const qpmSharedPath = 'qpm.shared.json'
+  const qpmPath = 'qpm.json'
   //path.join(
   //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   // process.env.GITHUB_WORKSPACE!,
   // 'qpm.shared.json'
   // )
   const qpmSharedFile = await readQPM<QPMSharedPackage>(qpmSharedPath)
+  const qpmFile = await readQPM<QPMPackage>(qpmPath)
 
   if (version) {
     core.info(`Overwriting version with provided ${version}`)
@@ -98,6 +100,11 @@ async function doPublish(
         {
           content: JSON.stringify(qpmSharedFile),
           path: qpmSharedPath,
+          mode: '100644'
+        },
+        {
+          content: JSON.stringify(qpmFile),
+          path: qpmPath,
           mode: '100644'
         }
       ],
