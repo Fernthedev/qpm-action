@@ -228,23 +228,23 @@ export async function run(): Promise<void> {
     const parameters = getActionParameters()
     const { restore, token, version, qpmVersion } = parameters
     const octokit = github.getOctokit(token)
-    let qpmRustPath: string | undefined
+    let qmBinaryPath: string | undefined
 
     if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
       const versionReq = qpmVersion?.split('version@')[1]
       const versionRange = versionReq ? new semver.Range(versionReq) : undefined
 
-      qpmRustPath = await downloadQpmVersion(octokit, token, versionRange)
+      qmBinaryPath = await downloadQpmVersion(octokit, token, versionRange)
     } else if (qpmVersion.startsWith('ref@')) {
       let ref: string | undefined = qpmVersion.split('ref@')[1]
       if (ref.trim() === '') ref = undefined
 
-      qpmRustPath = await downloadQpmBleeding(octokit, token, ref)
+      qmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
     } else {
       core.error('Unable to parse qpm version, skipping')
     }
 
-    const cachePathOutput = stripAnsi((await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout)
+    const cachePathOutput = stripAnsi((await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout)
 
     // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
     const cachePath = cachePathOutput.split('Config path is: ')[1].trim()
@@ -253,7 +253,8 @@ export async function run(): Promise<void> {
     let cacheKey: string | undefined
     const key = 'qpm-cache-'
     if (parameters.cache) {
-      const restoreKeys = ['qpm-cache-', 'qpm-cache-']
+      core.info(`Restoring cache at ${paths}`)
+      const restoreKeys = ['qpm-cache-']
       cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }
 
@@ -268,7 +269,7 @@ export async function run(): Promise<void> {
     }
 
     if (restore) {
-      await githubExecAsync(`${qpmRustPath} ${QPM_COMMAND_RESTORE}`)
+      await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_RESTORE}`)
     }
 
     if (parameters.cache) {
