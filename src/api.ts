@@ -12,7 +12,7 @@ export function getQPM_ArtifactExecutableName() {
 // Helper function to get the expected QPM artifact name
 export function getQPM_ReleaseExecutableName() {
   let os: string = node_os.platform()
-  let arch = node_os.arch()
+  const arch = node_os.arch()
 
   if (os === 'win32') os = 'windows'
   if (os === 'darwin') os = 'macos'

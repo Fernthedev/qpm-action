@@ -11,7 +11,8 @@ import {
   QPM_COMMAND_RESTORE,
   QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
-  QPM_REPOSITORY_OWNER
+  QPM_REPOSITORY_OWNER,
+  QPM_REPOSITORY_WORKFLOW_NAME
 } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
@@ -28,7 +29,7 @@ type WorkflowRun = {
   /** @example 42 */
   head_repository_id?: number
   /** @example main */
-  head_branch?: string
+  head_branch?: string | null
   /** @example 009b8a3a9ccbb128af87f9b1c0f4c62e8a304f6d */
   head_sha?: string
 }
@@ -88,9 +89,23 @@ async function downloadQpmBleeding(
   core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   // List artifacts for the QPM repository
-  const listedArtifacts = await octokit.rest.actions.listArtifactsForRepo({
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
     owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME
+    repo: QPM_REPOSITORY_NAME,
+    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
+  })
+
+  const workflowRuns = workflowRunsResult.data.workflow_runs
+    .filter(e => matchCheck(e))
+    .sort((a, b) => a.run_number - b.run_number)
+
+  // get latest workflow
+  const workflowId = workflowRuns[workflowRuns.length - 1]
+
+  const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
+    owner: QPM_REPOSITORY_OWNER,
+    repo: QPM_REPOSITORY_NAME,
+    run_id: workflowId.run_number
   })
 
   // Choose the matching workflow run based on the provided ref or the latest branch
@@ -276,7 +291,7 @@ export async function run(): Promise<void> {
       await cache.saveCache(paths, cacheKey ?? key)
     }
 
-    if (parameters.publish == PublishMode.now) {
+    if (parameters.publish === PublishMode.now) {
       publishRun(parameters)
     }
   } catch (error) {
