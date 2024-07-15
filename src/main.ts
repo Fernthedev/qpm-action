@@ -44,9 +44,23 @@ async function downloadQpm(
     return path.join(cachedPath, 'qpm')
   }
 
-  const listedArtifacts = await octokit.rest.actions.listArtifactsForRepo({
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
     owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME
+    repo: QPM_REPOSITORY_NAME,
+    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
+  })
+
+  const workflowRuns = workflowRunsResult.data.workflow_runs.sort(
+    (a, b) => a.run_number - b.run_number
+  )
+
+  // get latest workflow
+  const workflowId = workflowRuns[workflowRuns.length - 1]
+
+  const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
+    owner: QPM_REPOSITORY_OWNER,
+    repo: QPM_REPOSITORY_NAME,
+    run_id: workflowId.run_number
   })
   const artifact = listedArtifacts.data.artifacts.find(
     e =>
@@ -56,7 +70,7 @@ async function downloadQpm(
   if (!artifact) {
     core.error(
       `No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH} `
-    ) 
+    )
   }
 
   const url = artifact!.archive_download_url
@@ -81,7 +95,7 @@ async function downloadQpm(
 
   const execFile = path.join(cachedPath, 'qpm')
   await githubExecAsync(`chmod +x ${execFile}`)
-  await githubExecAsync(`ln ${execFile} ${path.join(cachedPath, "qpm-rust")}`)
+  await githubExecAsync(`ln ${execFile} ${path.join(cachedPath, 'qpm-rust')}`)
 
   return execFile
 }
