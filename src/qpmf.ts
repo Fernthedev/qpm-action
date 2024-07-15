@@ -14,9 +14,9 @@ export interface QPMPackage {
       branchName?: string
       headersOnly?: boolean
       overrideSoName?: string
-      overrideDebugSoName?: string,
-      soLink?: string,
-      debugSoLink?: string,
+      overrideDebugSoName?: string
+      soLink?: string
+      debugSoLink?: string
       modLink?: string
     }
   }
@@ -25,7 +25,6 @@ export interface QPMPackage {
 export async function readQPM<T extends QPMPackage | QPMSharedPackage>(
   file: fsOld.PathLike
 ): Promise<T> {
-
   return JSON.parse((await fs.readFile(file, undefined)).toString())
 }
 

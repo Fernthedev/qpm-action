@@ -3,13 +3,12 @@ import {getExecOutput as githubExec} from '@actions/exec'
 import * as core from '@actions/core'
 import stripAnsi from 'strip-ansi'
 
-
 export function getReleaseDownloadLink(
-    user: string,
-    repo: string,
-    version: string,
+  user: string,
+  repo: string,
+  version: string
 ) {
-    return `https://github.com/${user}/${repo}/releases/download/${version}`
+  return `https://github.com/${user}/${repo}/releases/download/${version}`
 }
 
 export async function execAsync(command: string) {
@@ -40,9 +39,7 @@ export function getActionParameters() {
   const version: string | undefined = stringOrUndefined(
     core.getInput('version')
   )
-  const tag: string | undefined = stringOrUndefined(
-    core.getInput('tag')
-  )
+  const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
 
   const qpmReleaseBin = core.getBooleanInput('qpm_release_bin')
@@ -50,7 +47,7 @@ export function getActionParameters() {
   const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'))
 
   const cache = core.getBooleanInput('cache')
-  const cacheLockfile = core.getBooleanInput('cache_lockfile') 
+  const cacheLockfile = core.getBooleanInput('cache_lockfile')
   const restore = core.getBooleanInput('restore')
 
   // This should be a token with access to your repository scoped in as a secret.
