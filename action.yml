@@ -28,7 +28,6 @@ inputs:
     required: false
     description: 'Specifies if the action should handle caches'
     default: 'true'
-
   cache_lockfile:
     required: false
     description: 'Specifies if the action should use caches with qpm.shared.json'

@@ -41,8 +41,8 @@ export function getActionParameters() {
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
 
-  const qpmReleaseBin = core.getBooleanInput('qpm_release_bin')
-  const qpmDebugBin = core.getBooleanInput('qpm_debug_bin')
+  const qpmReleaseBin = stringOrUndefined(core.getInput('qpm_release_bin'))
+  const qpmDebugBin = stringOrUndefined(core.getInput('qpm_debug_bin'))
   const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'))
 
   const cache = core.getBooleanInput('cache')
