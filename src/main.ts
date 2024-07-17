@@ -45,6 +45,7 @@ async function downloadQpm(
   }
 
   // List artifacts for the QPM repository
+  core.info('Looking for workflow runs')
   const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo(
     {
       owner: QPM_REPOSITORY_OWNER,
@@ -62,10 +63,12 @@ async function downloadQpm(
   // get latest workflow
   const workflowId = workflowRuns[workflowRuns.length - 1]
 
+  core.info(`Listing workflow artifacts ${workflowId.id}`)
+
   const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.run_number
+    run_id: workflowId.id
   })
   const artifact = listedArtifacts.data.artifacts.find(
     e =>

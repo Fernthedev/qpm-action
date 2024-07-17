@@ -132,6 +132,7 @@ function downloadQpm(octokit, token) {
             return path.join(cachedPath, 'qpm');
         }
         // List artifacts for the QPM repository
+        core.info('Looking for workflow runs');
         const workflowRunsResult = yield octokit.rest.actions.listWorkflowRunsForRepo({
             owner: const_1.QPM_REPOSITORY_OWNER,
             repo: const_1.QPM_REPOSITORY_NAME,
@@ -142,10 +143,11 @@ function downloadQpm(octokit, token) {
         const workflowRuns = workflowRunsResult.data.workflow_runs.sort((a, b) => a.run_number - b.run_number);
         // get latest workflow
         const workflowId = workflowRuns[workflowRuns.length - 1];
+        core.info(`Listing workflow artifacts ${workflowId.id}`);
         const listedArtifacts = yield octokit.rest.actions.listWorkflowRunArtifacts({
             owner: const_1.QPM_REPOSITORY_OWNER,
             repo: const_1.QPM_REPOSITORY_NAME,
-            run_id: workflowId.run_number
+            run_id: workflowId.id
         });
         const artifact = listedArtifacts.data.artifacts.find(e => {
             var _a;
