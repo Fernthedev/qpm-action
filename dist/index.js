@@ -73138,6 +73138,536 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 6144:
+/***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
+
+__nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
+/* harmony import */ var _main_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(470);
+/**
+ * The entrypoint for the action.
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+await (0,_main_js__WEBPACK_IMPORTED_MODULE_0__/* .run */ .K)();
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
+
+/***/ }),
+
+/***/ 470:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "K": () => (/* binding */ run)
+});
+
+// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
+var core = __nccwpck_require__(2186);
+// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
+var github = __nccwpck_require__(5438);
+// EXTERNAL MODULE: ./node_modules/@actions/tool-cache/lib/tool-cache.js
+var tool_cache = __nccwpck_require__(7784);
+// EXTERNAL MODULE: ./node_modules/@actions/cache/lib/cache.js
+var cache = __nccwpck_require__(7799);
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(7147);
+// EXTERNAL MODULE: external "path"
+var external_path_ = __nccwpck_require__(1017);
+// EXTERNAL MODULE: external "os"
+var external_os_ = __nccwpck_require__(2037);
+;// CONCATENATED MODULE: ./src/api.ts
+
+// Helper function to get the expected QPM artifact name
+function getQPM_ArtifactExecutableName() {
+    let os = external_os_.platform();
+    if (os === 'win32')
+        os = 'windows';
+    if (os === 'darwin')
+        os = 'macos';
+    return `${os}-qpm`;
+}
+// Helper function to get the expected QPM artifact name
+function getQPM_ReleaseExecutableName() {
+    let os = external_os_.platform();
+    const arch = external_os_.arch();
+    if (os === 'win32')
+        os = 'windows';
+    if (os === 'darwin')
+        os = 'macos';
+    return `qpm-${os}-${arch}.zip`;
+}
+
+;// CONCATENATED MODULE: ./src/constants.ts
+// Constants for QPM repository
+const QPM_REPOSITORY_OWNER = 'QuestPackageManager';
+const QPM_REPOSITORY_NAME = 'QPM.CLI';
+const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
+const QPM_REPOSITORY_BRANCH = 'main';
+const QPM_COMMAND_RESTORE = 'restore';
+const QPM_COMMAND_PUBLISH = 'publish';
+const QPM_COMMAND_CACHE_PATH = 'cache path';
+
+// EXTERNAL MODULE: external "child_process"
+var external_child_process_ = __nccwpck_require__(2081);
+// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
+var lib_exec = __nccwpck_require__(1514);
+;// CONCATENATED MODULE: ./node_modules/ansi-regex/index.js
+function ansiRegex({onlyFirst = false} = {}) {
+	const pattern = [
+	    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
+		'(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
+	].join('|');
+
+	return new RegExp(pattern, onlyFirst ? undefined : 'g');
+}
+
+;// CONCATENATED MODULE: ./node_modules/strip-ansi/index.js
+
+
+const regex = ansiRegex();
+
+function stripAnsi(string) {
+	if (typeof string !== 'string') {
+		throw new TypeError(`Expected a \`string\`, got \`${typeof string}\``);
+	}
+
+	// Even though the regex is global, we don't need to reset the `.lastIndex`
+	// because unlike `.exec()` and `.test()`, `.replace()` does it automatically
+	// and doing it manually has a performance penalty.
+	return string.replace(regex, '');
+}
+
+;// CONCATENATED MODULE: ./src/utils.ts
+
+
+
+
+var PublishMode;
+(function (PublishMode) {
+    PublishMode["now"] = "now";
+    PublishMode["late"] = "late";
+})(PublishMode || (PublishMode = {}));
+function getReleaseDownloadLink(user, repo, version) {
+    return `https://github.com/${user}/${repo}/releases/download/${version}`;
+}
+async function execAsync(command) {
+    return new Promise((resolve, reject) => {
+        exec(command, (err, stout, sterr) => {
+            if (err) {
+                reject(sterr);
+            }
+            else {
+                resolve(stout);
+            }
+        });
+    });
+}
+async function githubExecAsync(command) {
+    const output = await (0,lib_exec.getExecOutput)(command);
+    output.stdout = stripAnsi(output.stdout);
+    output.stderr = stripAnsi(output.stderr);
+    return output;
+}
+function stringOrUndefined(str) {
+    return str.trim() === '' ? undefined : str;
+}
+//eslint-ignore @typescript-eslint/explicit-function-return-type
+function getActionParameters() {
+    const publish = stringOrUndefined('publish');
+    const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
+    const version = stringOrUndefined(core.getInput('version'));
+    const tag = stringOrUndefined(core.getInput('tag'));
+    const publishToken = stringOrUndefined(core.getInput('publish_token'));
+    const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
+    const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
+    const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
+    const cache = core.getBooleanInput('cache');
+    const cacheLockfile = core.getBooleanInput('cache_lockfile');
+    const restore = core.getBooleanInput('restore');
+    // This should be a token with access to your repository scoped in as a secret.
+    // The YML workflow will need to set myToken with the GitHub Secret Token
+    // myToken: ${{ secrets.GITHUB_TOKEN }}
+    // https://help.github.com/en/actions/automating-your-workflow-with-github-actions/authenticating-with-the-github_token#about-the-github_token-secret
+    const myToken = core.getInput('workflow_token');
+    return {
+        qpmDebugBin,
+        qpmReleaseBin,
+        qpmQmod,
+        qpmVersion,
+        token: myToken,
+        publish,
+        version,
+        tag,
+        cache,
+        cacheLockfile,
+        restore,
+        publishToken
+    };
+}
+
+;// CONCATENATED MODULE: external "fs/promises"
+const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
+;// CONCATENATED MODULE: ./src/qpm_file.ts
+
+async function readQPM(file) {
+    return JSON.parse((await promises_namespaceObject.readFile(file, undefined)).toString());
+}
+async function writeQPM(file, qpm) {
+    const qpmStr = JSON.stringify(qpm);
+    await promises_namespaceObject.writeFile(file, qpmStr);
+}
+
+;// CONCATENATED MODULE: ./src/publish.ts
+
+
+
+
+
+async function doPublish(octokit, release, debug, qmod, version, tag) {
+    core.info('Publishing');
+    const qpmSharedPath = 'qpm.shared.json';
+    const qpmPath = 'qpm.json';
+    //path.join(
+    //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // process.env.GITHUB_WORKSPACE!,
+    // 'qpm.shared.json'
+    // )
+    const qpmSharedFile = await readQPM(qpmSharedPath);
+    const qpmFile = await readQPM(qpmPath);
+    if (version) {
+        core.info(`Overwriting version with provided ${version}`);
+        qpmSharedFile.config.info.version = version;
+    }
+    version ??= qpmSharedFile.config.info.version;
+    core.info(`Using version ${version} for publishing`);
+    const branch = `version/v${version.replace(/\./g, '_')}`;
+    qpmSharedFile.config.info.additionalData.branchName = branch;
+    const additionalData = qpmSharedFile.config.info.additionalData;
+    const download = getReleaseDownloadLink(github.context.repo.owner, github.context.repo.repo, tag ?? version);
+    const fileId = qpmSharedFile.config.info.id;
+    const fixedFileVersion = version.replace(/\./g, '_');
+    if (release) {
+        const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
+        const name = additionalData.overrideSoName ?? versionedName;
+        qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`;
+    }
+    if (debug) {
+        const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
+        const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
+        const name = additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName;
+        qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
+    }
+    if (qmod) {
+        qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`;
+    }
+    await writeQPM(qpmSharedPath, qpmSharedFile);
+    const git = octokit.rest.git;
+    await core.group('Publish', async () => {
+        // create branch
+        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+        const branchHead = `heads/${branch}`;
+        const branchRef = `refs/${branchHead}`;
+        core.info('Getting data');
+        // get current repo data
+        const lastCommitSha = github.context.sha;
+        const lastCommit = await git.getCommit({
+            ...github.context.repo,
+            commit_sha: lastCommitSha
+        });
+        try {
+            core.info('creating new branch');
+            await git.createRef({
+                ...github.context.repo,
+                ref: branchRef,
+                sha: lastCommitSha,
+                key: branchRef
+            });
+        }
+        catch (e) {
+            core.warning(`Creating new branch ${branch} failed due to ${e}`);
+        }
+        core.info('Creating commit');
+        // create commit
+        const newTree = await git.createTree({
+            ...github.context.repo,
+            tree: [
+                {
+                    content: JSON.stringify(qpmSharedFile),
+                    path: qpmSharedPath,
+                    mode: '100644'
+                },
+                {
+                    content: JSON.stringify(qpmFile),
+                    path: qpmPath,
+                    mode: '100644'
+                }
+            ],
+            base_tree: lastCommit.data.tree.sha
+        });
+        const commit = await git.createCommit({
+            ...github.context.repo,
+            parents: [lastCommitSha],
+            message: 'Update version and post restore',
+            tree: newTree.data.sha
+        });
+        // update branch
+        core.info(`Updating branch ${branchRef} ${commit.data.sha}`);
+        await git.updateRef({
+            ...github.context.repo,
+            ref: branchHead,
+            sha: commit.data.sha,
+            force: true
+        });
+    });
+    // do github stuff
+}
+async function publishRun(params) {
+    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
+    const octokit = github.getOctokit(token);
+    await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
+    await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
+}
+
+// EXTERNAL MODULE: ./node_modules/semver/index.js
+var semver = __nccwpck_require__(1383);
+var semver_default = /*#__PURE__*/__nccwpck_require__.n(semver);
+;// CONCATENATED MODULE: ./src/main.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+function lookForRef(e, ref) {
+    return e?.head_sha?.startsWith(ref) || e?.head_branch === ref;
+}
+function lookForLatestBranch(e) {
+    return e?.head_branch === QPM_REPOSITORY_BRANCH;
+}
+/** Check if the QPM version already exists in the cache
+ * Return the path if QPM exists, otherwise return undefined
+ **/
+async function checkIfQpmExists(version) {
+    const cachedPath = tool_cache.find('qpm', version);
+    if (external_fs_.existsSync(cachedPath)) {
+        core.debug('Using existing qpm tool cached');
+        core.addPath(cachedPath);
+        return external_path_.join(cachedPath, 'qpm');
+    }
+    return undefined;
+}
+async function fixupQpm(execFile) {
+    const parent = external_path_.dirname(execFile);
+    await githubExecAsync(`chmod +x ${execFile}`);
+    await githubExecAsync(`ln ${execFile} ${external_path_.join(parent, 'qpm-rust')}`);
+}
+// Function to download QPM
+async function downloadQpmBleeding(octokit, token, ref) {
+    // Get the branch information for QPM repository
+    const qpmBranch = await octokit.rest.repos.getBranch({
+        branch: QPM_REPOSITORY_BRANCH,
+        owner: QPM_REPOSITORY_OWNER,
+        repo: QPM_REPOSITORY_NAME
+    });
+    // Determine the target version based on the provided ref or use the latest commit SHA
+    const qpmTargetVersion = ref ?? qpmBranch.data.commit.sha;
+    core.debug(`Looking for qpm in cache version ${qpmTargetVersion}`);
+    // Check if QPM is already in the cache
+    let cachedPath = await checkIfQpmExists(qpmTargetVersion);
+    if (cachedPath) {
+        return cachedPath;
+    }
+    // Get the expected artifact name for QPM
+    const expectedArtifactName = getQPM_ArtifactExecutableName();
+    core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`);
+    // List artifacts for the QPM repository
+    const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
+        owner: QPM_REPOSITORY_OWNER,
+        repo: QPM_REPOSITORY_NAME,
+        status: 'success',
+        exclude_pull_requests: true,
+        branch: QPM_REPOSITORY_BRANCH
+    });
+    core.debug(`Found ${workflowRunsResult.data.total_count} workflows`);
+    const workflowRuns = workflowRunsResult.data.workflow_runs
+        .filter(e => matchCheck(e))
+        .sort((a, b) => a.run_number - b.run_number);
+    // get latest workflow
+    const workflowId = workflowRuns[workflowRuns.length - 1];
+    core.debug(`Looking for workflow artifacts`);
+    const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
+        owner: QPM_REPOSITORY_OWNER,
+        repo: QPM_REPOSITORY_NAME,
+        run_id: workflowId.id
+    });
+    // Choose the matching workflow run based on the provided ref or the latest branch
+    const matchCheck = ref !== undefined ? (e) => lookForRef(e, ref) : lookForLatestBranch;
+    // Find the QPM artifact in the list
+    const artifact = listedArtifacts.data.artifacts.find(e => e.name === expectedArtifactName && e.workflow_run && matchCheck(e.workflow_run));
+    // Handle the case when no artifact is found
+    if (!artifact) {
+        core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH}`);
+    }
+    // Download the QPM artifact
+    const url = artifact.archive_download_url;
+    core.debug(`Downloading from ${url}`);
+    const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
+    const qpmToolExtract = await tool_cache.extractZip(qpmTool);
+    cachedPath = await tool_cache.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion);
+    // Add the QPM path to the system path
+    core.addPath(cachedPath);
+    core.debug(`Added ${cachedPath} to path`);
+    // Display information about cached files
+    await core.group('cache files', async () => {
+        for (const file of external_fs_.readdirSync(cachedPath)) {
+            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
+        }
+        return Promise.resolve();
+    });
+    // Perform any necessary fix-ups for QPM
+    const execFile = external_path_.join(cachedPath, 'qpm');
+    await fixupQpm(execFile);
+    return execFile;
+}
+async function downloadQpmVersion(octokit, token, versionReq) {
+    // Determine the target version based on the provided ref or use the latest release
+    let qpmTargetReleaseTag;
+    if (versionReq === undefined) {
+        // Get the branch information for QPM repository
+        const qpmRelease = await octokit.rest.repos.getLatestRelease({
+            branch: QPM_REPOSITORY_BRANCH,
+            owner: QPM_REPOSITORY_OWNER,
+            repo: QPM_REPOSITORY_NAME
+        });
+        qpmTargetReleaseTag = qpmRelease.data.tag_name;
+    }
+    else {
+        // Get the branch information for QPM repository
+        const qpmReleases = await octokit.rest.repos.listReleases({
+            branch: QPM_REPOSITORY_BRANCH,
+            owner: QPM_REPOSITORY_OWNER,
+            repo: QPM_REPOSITORY_NAME
+        });
+        qpmReleases.data.sort((a, b) => a.tag_name.localeCompare(b.tag_name)).reverse();
+        const targetQpmRelease = qpmReleases.data.find(x => semver_default().satisfies(semver_default().coerce(x.tag_name), versionReq));
+        if (targetQpmRelease === undefined) {
+            core.error(`Unable to find valid qpm version for ${versionReq}`);
+        }
+        qpmTargetReleaseTag = targetQpmRelease?.tag_name;
+    }
+    core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`);
+    // Check if QPM is already in the cache
+    let cachedPath = await checkIfQpmExists(qpmTargetReleaseTag);
+    if (cachedPath) {
+        return cachedPath;
+    }
+    // Get the expected artifact name for QPM
+    const expectedArtifactName = getQPM_ReleaseExecutableName();
+    core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`);
+    // List artifacts for the QPM repository
+    const qpmRelease = await octokit.rest.repos.getReleaseByTag({
+        owner: QPM_REPOSITORY_OWNER,
+        repo: QPM_REPOSITORY_NAME,
+        tag: qpmTargetReleaseTag
+    });
+    // Find the QPM artifact in the list
+    const artifact = qpmRelease.data.assets.find(a => a.name === expectedArtifactName);
+    // Handle the case when no artifact is found
+    if (!artifact) {
+        core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${qpmTargetReleaseTag}`);
+    }
+    // Download the QPM artifact
+    const url = artifact.browser_download_url;
+    core.info(`Downloading from ${url}`);
+    const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
+    core.info(`Downloaded to ${qpmTool}, extracting`);
+    const qpmToolExtract = await tool_cache.extractZip(qpmTool);
+    core.info(`Extracted to ${qpmToolExtract}, adding to cache`);
+    cachedPath = await tool_cache.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag);
+    // Add the QPM path to the system path
+    core.addPath(cachedPath);
+    core.info(`Added ${cachedPath} to path`);
+    // Display information about cached files
+    await core.group('cache files', async () => {
+        for (const file of external_fs_.readdirSync(cachedPath)) {
+            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
+        }
+        return Promise.resolve();
+    });
+    // Perform any necessary fix-ups for QPM
+    const execFile = external_path_.join(cachedPath, 'qpm');
+    await fixupQpm(execFile);
+    return execFile;
+}
+async function run() {
+    try {
+        const qpmFilePath = 'qpm.json';
+        const parameters = getActionParameters();
+        const { restore, token, version, qpmVersion } = parameters;
+        const octokit = github.getOctokit(token);
+        let qmBinaryPath;
+        if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
+            const versionReq = qpmVersion?.split('version@')[1];
+            const versionRange = versionReq ? new (semver_default()).Range(versionReq) : undefined;
+            qmBinaryPath = await downloadQpmVersion(octokit, token, versionRange);
+        }
+        else if (qpmVersion.startsWith('ref@')) {
+            let ref = qpmVersion.split('ref@')[1];
+            if (ref.trim() === '')
+                ref = undefined;
+            qmBinaryPath = await downloadQpmBleeding(octokit, token, ref);
+        }
+        else {
+            core.error('Unable to parse qpm version, skipping');
+        }
+        const cachePathOutput = stripAnsi((await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout);
+        // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
+        const cachePath = cachePathOutput.split('Config path is: ')[1].trim();
+        const paths = [cachePath];
+        let cacheKey;
+        const key = 'qpm-cache-';
+        if (parameters.cache) {
+            core.info(`Restoring cache at ${paths}`);
+            const restoreKeys = ['qpm-cache-'];
+            cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true);
+        }
+        // Update version
+        if (version) {
+            core.info(`Using version ${version}`);
+            const qpm = await readQPM(qpmFilePath);
+            qpm.info.version = version;
+            writeQPM(qpmFilePath, qpm);
+        }
+        if (restore) {
+            await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_RESTORE}`);
+        }
+        if (parameters.cache) {
+            await cache.saveCache(paths, cacheKey ?? key);
+        }
+        if (parameters.publish === PublishMode.now) {
+            publishRun(parameters);
+        }
+    }
+    catch (error) {
+        if (error instanceof Error)
+            core.setFailed(error.message);
+        core.isDebug;
+    }
+}
+
+
+/***/ }),
+
 /***/ 2877:
 /***/ ((module) => {
 
@@ -83952,6 +84482,75 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ }
 /******/ 
 /************************************************************************/
+/******/ /* webpack/runtime/async module */
+/******/ (() => {
+/******/ 	var webpackQueues = typeof Symbol === "function" ? Symbol("webpack queues") : "__webpack_queues__";
+/******/ 	var webpackExports = typeof Symbol === "function" ? Symbol("webpack exports") : "__webpack_exports__";
+/******/ 	var webpackError = typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
+/******/ 	var resolveQueue = (queue) => {
+/******/ 		if(queue && !queue.d) {
+/******/ 			queue.d = 1;
+/******/ 			queue.forEach((fn) => (fn.r--));
+/******/ 			queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
+/******/ 		}
+/******/ 	}
+/******/ 	var wrapDeps = (deps) => (deps.map((dep) => {
+/******/ 		if(dep !== null && typeof dep === "object") {
+/******/ 			if(dep[webpackQueues]) return dep;
+/******/ 			if(dep.then) {
+/******/ 				var queue = [];
+/******/ 				queue.d = 0;
+/******/ 				dep.then((r) => {
+/******/ 					obj[webpackExports] = r;
+/******/ 					resolveQueue(queue);
+/******/ 				}, (e) => {
+/******/ 					obj[webpackError] = e;
+/******/ 					resolveQueue(queue);
+/******/ 				});
+/******/ 				var obj = {};
+/******/ 				obj[webpackQueues] = (fn) => (fn(queue));
+/******/ 				return obj;
+/******/ 			}
+/******/ 		}
+/******/ 		var ret = {};
+/******/ 		ret[webpackQueues] = x => {};
+/******/ 		ret[webpackExports] = dep;
+/******/ 		return ret;
+/******/ 	}));
+/******/ 	__nccwpck_require__.a = (module, body, hasAwait) => {
+/******/ 		var queue;
+/******/ 		hasAwait && ((queue = []).d = 1);
+/******/ 		var depQueues = new Set();
+/******/ 		var exports = module.exports;
+/******/ 		var currentDeps;
+/******/ 		var outerResolve;
+/******/ 		var reject;
+/******/ 		var promise = new Promise((resolve, rej) => {
+/******/ 			reject = rej;
+/******/ 			outerResolve = resolve;
+/******/ 		});
+/******/ 		promise[webpackExports] = exports;
+/******/ 		promise[webpackQueues] = (fn) => (queue && fn(queue), depQueues.forEach(fn), promise["catch"](x => {}));
+/******/ 		module.exports = promise;
+/******/ 		body((deps) => {
+/******/ 			currentDeps = wrapDeps(deps);
+/******/ 			var fn;
+/******/ 			var getResult = () => (currentDeps.map((d) => {
+/******/ 				if(d[webpackError]) throw d[webpackError];
+/******/ 				return d[webpackExports];
+/******/ 			}))
+/******/ 			var promise = new Promise((resolve) => {
+/******/ 				fn = () => (resolve(getResult));
+/******/ 				fn.r = 0;
+/******/ 				var fnQueue = (q) => (q !== queue && !depQueues.has(q) && (depQueues.add(q), q && !q.d && (fn.r++, q.push(fn))));
+/******/ 				currentDeps.map((dep) => (dep[webpackQueues](fnQueue)));
+/******/ 			});
+/******/ 			return fn.r ? promise : getResult();
+/******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
+/******/ 		queue && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/compat get default export */
 /******/ (() => {
 /******/ 	// getDefaultExport function for compatibility with non-harmony modules
@@ -83986,517 +84585,12 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = new URL('.', import.meta.url).pathname.slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
 /******/ 
 /************************************************************************/
-var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
-(() => {
-
-// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
-var core = __nccwpck_require__(2186);
-// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
-var github = __nccwpck_require__(5438);
-// EXTERNAL MODULE: ./node_modules/@actions/tool-cache/lib/tool-cache.js
-var tool_cache = __nccwpck_require__(7784);
-// EXTERNAL MODULE: ./node_modules/@actions/cache/lib/cache.js
-var cache = __nccwpck_require__(7799);
-// EXTERNAL MODULE: external "fs"
-var external_fs_ = __nccwpck_require__(7147);
-// EXTERNAL MODULE: external "path"
-var external_path_ = __nccwpck_require__(1017);
-// EXTERNAL MODULE: external "os"
-var external_os_ = __nccwpck_require__(2037);
-;// CONCATENATED MODULE: ./src/api.ts
-
-// Helper function to get the expected QPM artifact name
-function getQPM_ArtifactExecutableName() {
-    let os = external_os_.platform();
-    if (os === 'win32')
-        os = 'windows';
-    if (os === 'darwin')
-        os = 'macos';
-    return `${os}-qpm`;
-}
-// Helper function to get the expected QPM artifact name
-function getQPM_ReleaseExecutableName() {
-    let os = external_os_.platform();
-    const arch = external_os_.arch();
-    if (os === 'win32')
-        os = 'windows';
-    if (os === 'darwin')
-        os = 'macos';
-    return `qpm-${os}-${arch}.zip`;
-}
-
-;// CONCATENATED MODULE: ./src/constants.ts
-// Constants for QPM repository
-const QPM_REPOSITORY_OWNER = 'QuestPackageManager';
-const QPM_REPOSITORY_NAME = 'QPM.CLI';
-const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
-const QPM_REPOSITORY_BRANCH = 'main';
-const QPM_COMMAND_RESTORE = 'restore';
-const QPM_COMMAND_PUBLISH = 'publish';
-const QPM_COMMAND_CACHE_PATH = 'cache path';
-
-// EXTERNAL MODULE: external "child_process"
-var external_child_process_ = __nccwpck_require__(2081);
-// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
-var lib_exec = __nccwpck_require__(1514);
-;// CONCATENATED MODULE: ./node_modules/ansi-regex/index.js
-function ansiRegex({onlyFirst = false} = {}) {
-	const pattern = [
-	    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
-		'(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
-	].join('|');
-
-	return new RegExp(pattern, onlyFirst ? undefined : 'g');
-}
-
-;// CONCATENATED MODULE: ./node_modules/strip-ansi/index.js
-
-
-const regex = ansiRegex();
-
-function stripAnsi(string) {
-	if (typeof string !== 'string') {
-		throw new TypeError(`Expected a \`string\`, got \`${typeof string}\``);
-	}
-
-	// Even though the regex is global, we don't need to reset the `.lastIndex`
-	// because unlike `.exec()` and `.test()`, `.replace()` does it automatically
-	// and doing it manually has a performance penalty.
-	return string.replace(regex, '');
-}
-
-;// CONCATENATED MODULE: ./src/utils.ts
-
-
-
-
-var PublishMode;
-(function (PublishMode) {
-    PublishMode["now"] = "now";
-    PublishMode["late"] = "late";
-})(PublishMode || (PublishMode = {}));
-function getReleaseDownloadLink(user, repo, version) {
-    return `https://github.com/${user}/${repo}/releases/download/${version}`;
-}
-async function execAsync(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, (err, stout, sterr) => {
-            if (err) {
-                reject(sterr);
-            }
-            else {
-                resolve(stout);
-            }
-        });
-    });
-}
-async function githubExecAsync(command) {
-    const output = await (0,lib_exec.getExecOutput)(command);
-    output.stdout = stripAnsi(output.stdout);
-    output.stderr = stripAnsi(output.stderr);
-    return output;
-}
-function stringOrUndefined(str) {
-    return str.trim() === '' ? undefined : str;
-}
-function getActionParameters() {
-    const publish = stringOrUndefined('publish');
-    const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
-    const version = stringOrUndefined(core.getInput('version'));
-    const tag = stringOrUndefined(core.getInput('tag'));
-    const publishToken = stringOrUndefined(core.getInput('publish_token'));
-    const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
-    const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
-    const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
-    const cache = core.getBooleanInput('cache');
-    const cacheLockfile = core.getBooleanInput('cache_lockfile');
-    const restore = core.getBooleanInput('restore');
-    // This should be a token with access to your repository scoped in as a secret.
-    // The YML workflow will need to set myToken with the GitHub Secret Token
-    // myToken: ${{ secrets.GITHUB_TOKEN }}
-    // https://help.github.com/en/actions/automating-your-workflow-with-github-actions/authenticating-with-the-github_token#about-the-github_token-secret
-    const myToken = core.getInput('workflow_token');
-    return {
-        qpmDebugBin,
-        qpmReleaseBin,
-        qpmQmod,
-        qpmVersion,
-        token: myToken,
-        publish,
-        version,
-        tag,
-        cache,
-        cacheLockfile,
-        restore,
-        publishToken
-    };
-}
-
-;// CONCATENATED MODULE: external "fs/promises"
-const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
-;// CONCATENATED MODULE: ./src/qpm_file.ts
-
-async function readQPM(file) {
-    return JSON.parse((await promises_namespaceObject.readFile(file, undefined)).toString());
-}
-async function writeQPM(file, qpm) {
-    const qpmStr = JSON.stringify(qpm);
-    await promises_namespaceObject.writeFile(file, qpmStr);
-}
-
-;// CONCATENATED MODULE: ./src/publish.ts
-
-
-
-
-
-async function doPublish(octokit, release, debug, qmod, version, tag) {
-    core.info('Publishing');
-    const qpmSharedPath = 'qpm.shared.json';
-    const qpmPath = 'qpm.json';
-    //path.join(
-    //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    // process.env.GITHUB_WORKSPACE!,
-    // 'qpm.shared.json'
-    // )
-    const qpmSharedFile = await readQPM(qpmSharedPath);
-    const qpmFile = await readQPM(qpmPath);
-    if (version) {
-        core.info(`Overwriting version with provided ${version}`);
-        qpmSharedFile.config.info.version = version;
-    }
-    version ??= qpmSharedFile.config.info.version;
-    core.info(`Using version ${version} for publishing`);
-    const branch = `version/v${version.replace(/\./g, '_')}`;
-    qpmSharedFile.config.info.additionalData.branchName = branch;
-    const additionalData = qpmSharedFile.config.info.additionalData;
-    const download = getReleaseDownloadLink(github.context.repo.owner, github.context.repo.repo, tag ?? version);
-    const fileId = qpmSharedFile.config.info.id;
-    const fixedFileVersion = version.replace(/\./g, '_');
-    if (release) {
-        const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
-        const name = additionalData.overrideSoName ?? versionedName;
-        qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`;
-    }
-    if (debug) {
-        const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
-        const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
-        const name = additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName;
-        qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
-    }
-    if (qmod) {
-        qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`;
-    }
-    await writeQPM(qpmSharedPath, qpmSharedFile);
-    const git = octokit.rest.git;
-    await core.group('Publish', async () => {
-        // create branch
-        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-        const branchHead = `heads/${branch}`;
-        const branchRef = `refs/${branchHead}`;
-        core.info('Getting data');
-        // get current repo data
-        const lastCommitSha = github.context.sha;
-        const lastCommit = await git.getCommit({
-            ...github.context.repo,
-            commit_sha: lastCommitSha
-        });
-        try {
-            core.info('creating new branch');
-            await git.createRef({
-                ...github.context.repo,
-                ref: branchRef,
-                sha: lastCommitSha,
-                key: branchRef
-            });
-        }
-        catch (e) {
-            core.warning(`Creating new branch ${branch} failed due to ${e}`);
-        }
-        core.info('Creating commit');
-        // create commit
-        const newTree = await git.createTree({
-            ...github.context.repo,
-            tree: [
-                {
-                    content: JSON.stringify(qpmSharedFile),
-                    path: qpmSharedPath,
-                    mode: '100644'
-                },
-                {
-                    content: JSON.stringify(qpmFile),
-                    path: qpmPath,
-                    mode: '100644'
-                }
-            ],
-            base_tree: lastCommit.data.tree.sha
-        });
-        const commit = await git.createCommit({
-            ...github.context.repo,
-            parents: [lastCommitSha],
-            message: 'Update version and post restore',
-            tree: newTree.data.sha
-        });
-        // update branch
-        core.info(`Updating branch ${branchRef} ${commit.data.sha}`);
-        await git.updateRef({
-            ...github.context.repo,
-            ref: branchHead,
-            sha: commit.data.sha,
-            force: true
-        });
-    });
-    // do github stuff
-}
-async function publishRun(params) {
-    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
-    const octokit = github.getOctokit(token);
-    await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-    await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
-}
-
-// EXTERNAL MODULE: ./node_modules/semver/index.js
-var semver = __nccwpck_require__(1383);
-var semver_default = /*#__PURE__*/__nccwpck_require__.n(semver);
-;// CONCATENATED MODULE: ./src/main.ts
-
-
-
-
-
-
-
-
-
-
-
-
-
-function lookForRef(e, ref) {
-    return e?.head_sha?.startsWith(ref) || e?.head_branch === ref;
-}
-function lookForLatestBranch(e) {
-    return e?.head_branch === QPM_REPOSITORY_BRANCH;
-}
-/** Check if the QPM version already exists in the cache
- * Return the path if QPM exists, otherwise return undefined
- **/
-async function checkIfQpmExists(version) {
-    const cachedPath = tool_cache.find('qpm', version);
-    if (external_fs_.existsSync(cachedPath)) {
-        core.debug('Using existing qpm tool cached');
-        core.addPath(cachedPath);
-        return external_path_.join(cachedPath, 'qpm');
-    }
-    return undefined;
-}
-async function fixupQpm(execFile) {
-    const parent = external_path_.dirname(execFile);
-    await githubExecAsync(`chmod +x ${execFile}`);
-    await githubExecAsync(`ln ${execFile} ${external_path_.join(parent, 'qpm-rust')}`);
-}
-// Function to download QPM
-async function downloadQpmBleeding(octokit, token, ref) {
-    // Get the branch information for QPM repository
-    const qpmBranch = await octokit.rest.repos.getBranch({
-        branch: QPM_REPOSITORY_BRANCH,
-        owner: QPM_REPOSITORY_OWNER,
-        repo: QPM_REPOSITORY_NAME
-    });
-    // Determine the target version based on the provided ref or use the latest commit SHA
-    const qpmTargetVersion = ref ?? qpmBranch.data.commit.sha;
-    core.debug(`Looking for qpm in cache version ${qpmTargetVersion}`);
-    // Check if QPM is already in the cache
-    let cachedPath = await checkIfQpmExists(qpmTargetVersion);
-    if (cachedPath) {
-        return cachedPath;
-    }
-    // Get the expected artifact name for QPM
-    const expectedArtifactName = getQPM_ArtifactExecutableName();
-    core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`);
-    // List artifacts for the QPM repository
-    const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
-        owner: QPM_REPOSITORY_OWNER,
-        repo: QPM_REPOSITORY_NAME,
-        status: 'success',
-        exclude_pull_requests: true,
-        branch: QPM_REPOSITORY_BRANCH
-    });
-    const workflowRuns = workflowRunsResult.data.workflow_runs
-        .filter(e => matchCheck(e))
-        .sort((a, b) => a.run_number - b.run_number);
-    // get latest workflow
-    const workflowId = workflowRuns[workflowRuns.length - 1];
-    const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
-        owner: QPM_REPOSITORY_OWNER,
-        repo: QPM_REPOSITORY_NAME,
-        run_id: workflowId.run_number
-    });
-    // Choose the matching workflow run based on the provided ref or the latest branch
-    const matchCheck = ref !== undefined ? (e) => lookForRef(e, ref) : lookForLatestBranch;
-    // Find the QPM artifact in the list
-    const artifact = listedArtifacts.data.artifacts.find(e => e.name === expectedArtifactName && e.workflow_run && matchCheck(e.workflow_run));
-    // Handle the case when no artifact is found
-    if (!artifact) {
-        core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH}`);
-    }
-    // Download the QPM artifact
-    const url = artifact.archive_download_url;
-    core.debug(`Downloading from ${url}`);
-    const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
-    const qpmToolExtract = await tool_cache.extractZip(qpmTool);
-    cachedPath = await tool_cache.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion);
-    // Add the QPM path to the system path
-    core.addPath(cachedPath);
-    core.debug(`Added ${cachedPath} to path`);
-    // Display information about cached files
-    await core.group('cache files', async () => {
-        for (const file of external_fs_.readdirSync(cachedPath)) {
-            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
-        }
-        return Promise.resolve();
-    });
-    // Perform any necessary fix-ups for QPM
-    const execFile = external_path_.join(cachedPath, 'qpm');
-    await fixupQpm(execFile);
-    return execFile;
-}
-async function downloadQpmVersion(octokit, token, versionReq) {
-    // Determine the target version based on the provided ref or use the latest release
-    let qpmTargetReleaseTag;
-    if (versionReq === undefined) {
-        // Get the branch information for QPM repository
-        const qpmRelease = await octokit.rest.repos.getLatestRelease({
-            branch: QPM_REPOSITORY_BRANCH,
-            owner: QPM_REPOSITORY_OWNER,
-            repo: QPM_REPOSITORY_NAME
-        });
-        qpmTargetReleaseTag = qpmRelease.data.tag_name;
-    }
-    else {
-        // Get the branch information for QPM repository
-        const qpmReleases = await octokit.rest.repos.listReleases({
-            branch: QPM_REPOSITORY_BRANCH,
-            owner: QPM_REPOSITORY_OWNER,
-            repo: QPM_REPOSITORY_NAME
-        });
-        qpmReleases.data.sort((a, b) => a.tag_name.localeCompare(b.tag_name)).reverse();
-        const targetQpmRelease = qpmReleases.data.find(x => semver_default().satisfies(semver_default().coerce(x.tag_name), versionReq));
-        if (targetQpmRelease === undefined) {
-            core.error(`Unable to find valid qpm version for ${versionReq}`);
-        }
-        qpmTargetReleaseTag = targetQpmRelease?.tag_name;
-    }
-    core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`);
-    // Check if QPM is already in the cache
-    let cachedPath = await checkIfQpmExists(qpmTargetReleaseTag);
-    if (cachedPath) {
-        return cachedPath;
-    }
-    // Get the expected artifact name for QPM
-    const expectedArtifactName = getQPM_ReleaseExecutableName();
-    core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`);
-    // List artifacts for the QPM repository
-    const qpmRelease = await octokit.rest.repos.getReleaseByTag({
-        owner: QPM_REPOSITORY_OWNER,
-        repo: QPM_REPOSITORY_NAME,
-        tag: qpmTargetReleaseTag
-    });
-    // Find the QPM artifact in the list
-    const artifact = qpmRelease.data.assets.find(a => a.name === expectedArtifactName);
-    // Handle the case when no artifact is found
-    if (!artifact) {
-        core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${qpmTargetReleaseTag}`);
-    }
-    // Download the QPM artifact
-    const url = artifact.browser_download_url;
-    core.info(`Downloading from ${url}`);
-    const qpmTool = await tool_cache.downloadTool(url, undefined, `Bearer ${token}`);
-    core.info(`Downloaded to ${qpmTool}, extracting`);
-    const qpmToolExtract = await tool_cache.extractZip(qpmTool);
-    core.info(`Extracted to ${qpmToolExtract}, adding to cache`);
-    cachedPath = await tool_cache.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag);
-    // Add the QPM path to the system path
-    core.addPath(cachedPath);
-    core.info(`Added ${cachedPath} to path`);
-    // Display information about cached files
-    await core.group('cache files', async () => {
-        for (const file of external_fs_.readdirSync(cachedPath)) {
-            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
-        }
-        return Promise.resolve();
-    });
-    // Perform any necessary fix-ups for QPM
-    const execFile = external_path_.join(cachedPath, 'qpm');
-    await fixupQpm(execFile);
-    return execFile;
-}
-async function run() {
-    try {
-        const qpmFilePath = 'qpm.json';
-        const parameters = getActionParameters();
-        const { restore, token, version, qpmVersion } = parameters;
-        const octokit = github.getOctokit(token);
-        let qmBinaryPath;
-        if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
-            const versionReq = qpmVersion?.split('version@')[1];
-            const versionRange = versionReq ? new (semver_default()).Range(versionReq) : undefined;
-            qmBinaryPath = await downloadQpmVersion(octokit, token, versionRange);
-        }
-        else if (qpmVersion.startsWith('ref@')) {
-            let ref = qpmVersion.split('ref@')[1];
-            if (ref.trim() === '')
-                ref = undefined;
-            qmBinaryPath = await downloadQpmBleeding(octokit, token, ref);
-        }
-        else {
-            core.error('Unable to parse qpm version, skipping');
-        }
-        const cachePathOutput = stripAnsi((await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout);
-        // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
-        const cachePath = cachePathOutput.split('Config path is: ')[1].trim();
-        const paths = [cachePath];
-        let cacheKey;
-        const key = 'qpm-cache-';
-        if (parameters.cache) {
-            core.info(`Restoring cache at ${paths}`);
-            const restoreKeys = ['qpm-cache-'];
-            cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true);
-        }
-        // Update version
-        if (version) {
-            core.info(`Using version ${version}`);
-            const qpm = await readQPM(qpmFilePath);
-            qpm.info.version = version;
-            writeQPM(qpmFilePath, qpm);
-        }
-        if (restore) {
-            await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_RESTORE}`);
-        }
-        if (parameters.cache) {
-            await cache.saveCache(paths, cacheKey ?? key);
-        }
-        if (parameters.publish === PublishMode.now) {
-            publishRun(parameters);
-        }
-    }
-    catch (error) {
-        if (error instanceof Error)
-            core.setFailed(error.message);
-        core.isDebug;
-    }
-}
-
-;// CONCATENATED MODULE: ./src/index.ts
-/**
- * The entrypoint for the action.
- */
-
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
-run();
-
-})();
-
+/******/ 
+/******/ // startup
+/******/ // Load entry module and return exports
+/******/ // This entry module used 'module' so it can't be inlined
+/******/ var __webpack_exports__ = __nccwpck_require__(6144);
+/******/ __webpack_exports__ = await __webpack_exports__;
+/******/ 
 
 //# sourceMappingURL=index.js.map

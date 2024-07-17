@@ -32931,6 +32931,292 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 7051:
+/***/ ((module, __unused_webpack___webpack_exports__, __nccwpck_require__) => {
+
+__nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __webpack_async_result__) => { try {
+/* harmony import */ var _publish_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(5455);
+/* harmony import */ var _utils_js__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(8375);
+
+
+const parameters = (0,_utils_js__WEBPACK_IMPORTED_MODULE_1__/* .getActionParameters */ .gs)();
+if (parameters.publish === _utils_js__WEBPACK_IMPORTED_MODULE_1__/* .PublishMode.late */ .af.late) {
+    await (0,_publish_js__WEBPACK_IMPORTED_MODULE_0__/* .publishRun */ .m)(parameters);
+}
+
+__webpack_async_result__();
+} catch(e) { __webpack_async_result__(e); } }, 1);
+
+/***/ }),
+
+/***/ 5455:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "m": () => (/* binding */ publishRun)
+});
+
+// EXTERNAL MODULE: ./src/utils.ts + 2 modules
+var utils = __nccwpck_require__(8375);
+// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
+var core = __nccwpck_require__(2186);
+// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
+var github = __nccwpck_require__(5438);
+;// CONCATENATED MODULE: external "fs/promises"
+const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
+;// CONCATENATED MODULE: ./src/qpm_file.ts
+
+async function readQPM(file) {
+    return JSON.parse((await promises_namespaceObject.readFile(file, undefined)).toString());
+}
+async function writeQPM(file, qpm) {
+    const qpmStr = JSON.stringify(qpm);
+    await promises_namespaceObject.writeFile(file, qpmStr);
+}
+
+;// CONCATENATED MODULE: ./src/constants.ts
+// Constants for QPM repository
+const QPM_REPOSITORY_OWNER = 'QuestPackageManager';
+const QPM_REPOSITORY_NAME = 'QPM.CLI';
+const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
+const QPM_REPOSITORY_BRANCH = 'main';
+const QPM_COMMAND_RESTORE = 'restore';
+const QPM_COMMAND_PUBLISH = 'publish';
+const QPM_COMMAND_CACHE_PATH = 'cache path';
+
+;// CONCATENATED MODULE: ./src/publish.ts
+
+
+
+
+
+async function doPublish(octokit, release, debug, qmod, version, tag) {
+    core.info('Publishing');
+    const qpmSharedPath = 'qpm.shared.json';
+    const qpmPath = 'qpm.json';
+    //path.join(
+    //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // process.env.GITHUB_WORKSPACE!,
+    // 'qpm.shared.json'
+    // )
+    const qpmSharedFile = await readQPM(qpmSharedPath);
+    const qpmFile = await readQPM(qpmPath);
+    if (version) {
+        core.info(`Overwriting version with provided ${version}`);
+        qpmSharedFile.config.info.version = version;
+    }
+    version ??= qpmSharedFile.config.info.version;
+    core.info(`Using version ${version} for publishing`);
+    const branch = `version/v${version.replace(/\./g, '_')}`;
+    qpmSharedFile.config.info.additionalData.branchName = branch;
+    const additionalData = qpmSharedFile.config.info.additionalData;
+    const download = (0,utils/* getReleaseDownloadLink */.oZ)(github.context.repo.owner, github.context.repo.repo, tag ?? version);
+    const fileId = qpmSharedFile.config.info.id;
+    const fixedFileVersion = version.replace(/\./g, '_');
+    if (release) {
+        const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
+        const name = additionalData.overrideSoName ?? versionedName;
+        qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`;
+    }
+    if (debug) {
+        const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
+        const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
+        const name = additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName;
+        qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
+    }
+    if (qmod) {
+        qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`;
+    }
+    await writeQPM(qpmSharedPath, qpmSharedFile);
+    const git = octokit.rest.git;
+    await core.group('Publish', async () => {
+        // create branch
+        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
+        const branchHead = `heads/${branch}`;
+        const branchRef = `refs/${branchHead}`;
+        core.info('Getting data');
+        // get current repo data
+        const lastCommitSha = github.context.sha;
+        const lastCommit = await git.getCommit({
+            ...github.context.repo,
+            commit_sha: lastCommitSha
+        });
+        try {
+            core.info('creating new branch');
+            await git.createRef({
+                ...github.context.repo,
+                ref: branchRef,
+                sha: lastCommitSha,
+                key: branchRef
+            });
+        }
+        catch (e) {
+            core.warning(`Creating new branch ${branch} failed due to ${e}`);
+        }
+        core.info('Creating commit');
+        // create commit
+        const newTree = await git.createTree({
+            ...github.context.repo,
+            tree: [
+                {
+                    content: JSON.stringify(qpmSharedFile),
+                    path: qpmSharedPath,
+                    mode: '100644'
+                },
+                {
+                    content: JSON.stringify(qpmFile),
+                    path: qpmPath,
+                    mode: '100644'
+                }
+            ],
+            base_tree: lastCommit.data.tree.sha
+        });
+        const commit = await git.createCommit({
+            ...github.context.repo,
+            parents: [lastCommitSha],
+            message: 'Update version and post restore',
+            tree: newTree.data.sha
+        });
+        // update branch
+        core.info(`Updating branch ${branchRef} ${commit.data.sha}`);
+        await git.updateRef({
+            ...github.context.repo,
+            ref: branchHead,
+            sha: commit.data.sha,
+            force: true
+        });
+    });
+    // do github stuff
+}
+async function publishRun(params) {
+    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
+    const octokit = github.getOctokit(token);
+    await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
+    await (0,utils/* githubExecAsync */.M7)(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
+}
+
+
+/***/ }),
+
+/***/ 8375:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "af": () => (/* binding */ PublishMode),
+  "gs": () => (/* binding */ getActionParameters),
+  "oZ": () => (/* binding */ getReleaseDownloadLink),
+  "M7": () => (/* binding */ githubExecAsync)
+});
+
+// UNUSED EXPORTS: execAsync
+
+// EXTERNAL MODULE: external "child_process"
+var external_child_process_ = __nccwpck_require__(2081);
+// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
+var lib_exec = __nccwpck_require__(1514);
+// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
+var core = __nccwpck_require__(2186);
+;// CONCATENATED MODULE: ./node_modules/ansi-regex/index.js
+function ansiRegex({onlyFirst = false} = {}) {
+	const pattern = [
+	    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
+		'(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
+	].join('|');
+
+	return new RegExp(pattern, onlyFirst ? undefined : 'g');
+}
+
+;// CONCATENATED MODULE: ./node_modules/strip-ansi/index.js
+
+
+const regex = ansiRegex();
+
+function stripAnsi(string) {
+	if (typeof string !== 'string') {
+		throw new TypeError(`Expected a \`string\`, got \`${typeof string}\``);
+	}
+
+	// Even though the regex is global, we don't need to reset the `.lastIndex`
+	// because unlike `.exec()` and `.test()`, `.replace()` does it automatically
+	// and doing it manually has a performance penalty.
+	return string.replace(regex, '');
+}
+
+;// CONCATENATED MODULE: ./src/utils.ts
+
+
+
+
+var PublishMode;
+(function (PublishMode) {
+    PublishMode["now"] = "now";
+    PublishMode["late"] = "late";
+})(PublishMode || (PublishMode = {}));
+function getReleaseDownloadLink(user, repo, version) {
+    return `https://github.com/${user}/${repo}/releases/download/${version}`;
+}
+async function execAsync(command) {
+    return new Promise((resolve, reject) => {
+        exec(command, (err, stout, sterr) => {
+            if (err) {
+                reject(sterr);
+            }
+            else {
+                resolve(stout);
+            }
+        });
+    });
+}
+async function githubExecAsync(command) {
+    const output = await (0,lib_exec.getExecOutput)(command);
+    output.stdout = stripAnsi(output.stdout);
+    output.stderr = stripAnsi(output.stderr);
+    return output;
+}
+function stringOrUndefined(str) {
+    return str.trim() === '' ? undefined : str;
+}
+//eslint-ignore @typescript-eslint/explicit-function-return-type
+function getActionParameters() {
+    const publish = stringOrUndefined('publish');
+    const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
+    const version = stringOrUndefined(core.getInput('version'));
+    const tag = stringOrUndefined(core.getInput('tag'));
+    const publishToken = stringOrUndefined(core.getInput('publish_token'));
+    const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
+    const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
+    const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
+    const cache = core.getBooleanInput('cache');
+    const cacheLockfile = core.getBooleanInput('cache_lockfile');
+    const restore = core.getBooleanInput('restore');
+    // This should be a token with access to your repository scoped in as a secret.
+    // The YML workflow will need to set myToken with the GitHub Secret Token
+    // myToken: ${{ secrets.GITHUB_TOKEN }}
+    // https://help.github.com/en/actions/automating-your-workflow-with-github-actions/authenticating-with-the-github_token#about-the-github_token-secret
+    const myToken = core.getInput('workflow_token');
+    return {
+        qpmDebugBin,
+        qpmReleaseBin,
+        qpmQmod,
+        qpmVersion,
+        token: myToken,
+        publish,
+        version,
+        tag,
+        cache,
+        cacheLockfile,
+        restore,
+        publishToken
+    };
+}
+
+
+/***/ }),
+
 /***/ 2877:
 /***/ ((module) => {
 
@@ -34809,258 +35095,103 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ }
 /******/ 
 /************************************************************************/
+/******/ /* webpack/runtime/async module */
+/******/ (() => {
+/******/ 	var webpackQueues = typeof Symbol === "function" ? Symbol("webpack queues") : "__webpack_queues__";
+/******/ 	var webpackExports = typeof Symbol === "function" ? Symbol("webpack exports") : "__webpack_exports__";
+/******/ 	var webpackError = typeof Symbol === "function" ? Symbol("webpack error") : "__webpack_error__";
+/******/ 	var resolveQueue = (queue) => {
+/******/ 		if(queue && !queue.d) {
+/******/ 			queue.d = 1;
+/******/ 			queue.forEach((fn) => (fn.r--));
+/******/ 			queue.forEach((fn) => (fn.r-- ? fn.r++ : fn()));
+/******/ 		}
+/******/ 	}
+/******/ 	var wrapDeps = (deps) => (deps.map((dep) => {
+/******/ 		if(dep !== null && typeof dep === "object") {
+/******/ 			if(dep[webpackQueues]) return dep;
+/******/ 			if(dep.then) {
+/******/ 				var queue = [];
+/******/ 				queue.d = 0;
+/******/ 				dep.then((r) => {
+/******/ 					obj[webpackExports] = r;
+/******/ 					resolveQueue(queue);
+/******/ 				}, (e) => {
+/******/ 					obj[webpackError] = e;
+/******/ 					resolveQueue(queue);
+/******/ 				});
+/******/ 				var obj = {};
+/******/ 				obj[webpackQueues] = (fn) => (fn(queue));
+/******/ 				return obj;
+/******/ 			}
+/******/ 		}
+/******/ 		var ret = {};
+/******/ 		ret[webpackQueues] = x => {};
+/******/ 		ret[webpackExports] = dep;
+/******/ 		return ret;
+/******/ 	}));
+/******/ 	__nccwpck_require__.a = (module, body, hasAwait) => {
+/******/ 		var queue;
+/******/ 		hasAwait && ((queue = []).d = 1);
+/******/ 		var depQueues = new Set();
+/******/ 		var exports = module.exports;
+/******/ 		var currentDeps;
+/******/ 		var outerResolve;
+/******/ 		var reject;
+/******/ 		var promise = new Promise((resolve, rej) => {
+/******/ 			reject = rej;
+/******/ 			outerResolve = resolve;
+/******/ 		});
+/******/ 		promise[webpackExports] = exports;
+/******/ 		promise[webpackQueues] = (fn) => (queue && fn(queue), depQueues.forEach(fn), promise["catch"](x => {}));
+/******/ 		module.exports = promise;
+/******/ 		body((deps) => {
+/******/ 			currentDeps = wrapDeps(deps);
+/******/ 			var fn;
+/******/ 			var getResult = () => (currentDeps.map((d) => {
+/******/ 				if(d[webpackError]) throw d[webpackError];
+/******/ 				return d[webpackExports];
+/******/ 			}))
+/******/ 			var promise = new Promise((resolve) => {
+/******/ 				fn = () => (resolve(getResult));
+/******/ 				fn.r = 0;
+/******/ 				var fnQueue = (q) => (q !== queue && !depQueues.has(q) && (depQueues.add(q), q && !q.d && (fn.r++, q.push(fn))));
+/******/ 				currentDeps.map((dep) => (dep[webpackQueues](fnQueue)));
+/******/ 			});
+/******/ 			return fn.r ? promise : getResult();
+/******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
+/******/ 		queue && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/define property getters */
+/******/ (() => {
+/******/ 	// define getter functions for harmony exports
+/******/ 	__nccwpck_require__.d = (exports, definition) => {
+/******/ 		for(var key in definition) {
+/******/ 			if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 			}
+/******/ 		}
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/hasOwnProperty shorthand */
+/******/ (() => {
+/******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/compat */
 /******/ 
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = new URL('.', import.meta.url).pathname.slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
 /******/ 
 /************************************************************************/
-var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
-(() => {
-
-// EXTERNAL MODULE: external "child_process"
-var external_child_process_ = __nccwpck_require__(2081);
-// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
-var lib_exec = __nccwpck_require__(1514);
-// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
-var core = __nccwpck_require__(2186);
-;// CONCATENATED MODULE: ./node_modules/ansi-regex/index.js
-function ansiRegex({onlyFirst = false} = {}) {
-	const pattern = [
-	    '[\\u001B\\u009B][[\\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]+)*|[a-zA-Z\\d]+(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)',
-		'(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))'
-	].join('|');
-
-	return new RegExp(pattern, onlyFirst ? undefined : 'g');
-}
-
-;// CONCATENATED MODULE: ./node_modules/strip-ansi/index.js
-
-
-const regex = ansiRegex();
-
-function stripAnsi(string) {
-	if (typeof string !== 'string') {
-		throw new TypeError(`Expected a \`string\`, got \`${typeof string}\``);
-	}
-
-	// Even though the regex is global, we don't need to reset the `.lastIndex`
-	// because unlike `.exec()` and `.test()`, `.replace()` does it automatically
-	// and doing it manually has a performance penalty.
-	return string.replace(regex, '');
-}
-
-;// CONCATENATED MODULE: ./src/utils.ts
-
-
-
-
-var PublishMode;
-(function (PublishMode) {
-    PublishMode["now"] = "now";
-    PublishMode["late"] = "late";
-})(PublishMode || (PublishMode = {}));
-function getReleaseDownloadLink(user, repo, version) {
-    return `https://github.com/${user}/${repo}/releases/download/${version}`;
-}
-async function execAsync(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, (err, stout, sterr) => {
-            if (err) {
-                reject(sterr);
-            }
-            else {
-                resolve(stout);
-            }
-        });
-    });
-}
-async function githubExecAsync(command) {
-    const output = await (0,lib_exec.getExecOutput)(command);
-    output.stdout = stripAnsi(output.stdout);
-    output.stderr = stripAnsi(output.stderr);
-    return output;
-}
-function stringOrUndefined(str) {
-    return str.trim() === '' ? undefined : str;
-}
-function getActionParameters() {
-    const publish = stringOrUndefined('publish');
-    const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
-    const version = stringOrUndefined(core.getInput('version'));
-    const tag = stringOrUndefined(core.getInput('tag'));
-    const publishToken = stringOrUndefined(core.getInput('publish_token'));
-    const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
-    const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
-    const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
-    const cache = core.getBooleanInput('cache');
-    const cacheLockfile = core.getBooleanInput('cache_lockfile');
-    const restore = core.getBooleanInput('restore');
-    // This should be a token with access to your repository scoped in as a secret.
-    // The YML workflow will need to set myToken with the GitHub Secret Token
-    // myToken: ${{ secrets.GITHUB_TOKEN }}
-    // https://help.github.com/en/actions/automating-your-workflow-with-github-actions/authenticating-with-the-github_token#about-the-github_token-secret
-    const myToken = core.getInput('workflow_token');
-    return {
-        qpmDebugBin,
-        qpmReleaseBin,
-        qpmQmod,
-        qpmVersion,
-        token: myToken,
-        publish,
-        version,
-        tag,
-        cache,
-        cacheLockfile,
-        restore,
-        publishToken
-    };
-}
-
-// EXTERNAL MODULE: ./node_modules/@actions/github/lib/github.js
-var github = __nccwpck_require__(5438);
-;// CONCATENATED MODULE: external "fs/promises"
-const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
-;// CONCATENATED MODULE: ./src/qpm_file.ts
-
-async function readQPM(file) {
-    return JSON.parse((await promises_namespaceObject.readFile(file, undefined)).toString());
-}
-async function writeQPM(file, qpm) {
-    const qpmStr = JSON.stringify(qpm);
-    await promises_namespaceObject.writeFile(file, qpmStr);
-}
-
-;// CONCATENATED MODULE: ./src/constants.ts
-// Constants for QPM repository
-const QPM_REPOSITORY_OWNER = 'QuestPackageManager';
-const QPM_REPOSITORY_NAME = 'QPM.CLI';
-const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
-const QPM_REPOSITORY_BRANCH = 'main';
-const QPM_COMMAND_RESTORE = 'restore';
-const QPM_COMMAND_PUBLISH = 'publish';
-const QPM_COMMAND_CACHE_PATH = 'cache path';
-
-;// CONCATENATED MODULE: ./src/publish.ts
-
-
-
-
-
-async function doPublish(octokit, release, debug, qmod, version, tag) {
-    core.info('Publishing');
-    const qpmSharedPath = 'qpm.shared.json';
-    const qpmPath = 'qpm.json';
-    //path.join(
-    //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    // process.env.GITHUB_WORKSPACE!,
-    // 'qpm.shared.json'
-    // )
-    const qpmSharedFile = await readQPM(qpmSharedPath);
-    const qpmFile = await readQPM(qpmPath);
-    if (version) {
-        core.info(`Overwriting version with provided ${version}`);
-        qpmSharedFile.config.info.version = version;
-    }
-    version ??= qpmSharedFile.config.info.version;
-    core.info(`Using version ${version} for publishing`);
-    const branch = `version/v${version.replace(/\./g, '_')}`;
-    qpmSharedFile.config.info.additionalData.branchName = branch;
-    const additionalData = qpmSharedFile.config.info.additionalData;
-    const download = getReleaseDownloadLink(github.context.repo.owner, github.context.repo.repo, tag ?? version);
-    const fileId = qpmSharedFile.config.info.id;
-    const fixedFileVersion = version.replace(/\./g, '_');
-    if (release) {
-        const versionedName = `lib${fileId}_${fixedFileVersion}.so`;
-        const name = additionalData.overrideSoName ?? versionedName;
-        qpmSharedFile.config.info.additionalData.soLink = `${download}/${name}`;
-    }
-    if (debug) {
-        const nameOverride = additionalData.overrideSoName && `debug_${additionalData.overrideSoName}`;
-        const debugVersionedName = `debug_lib${fileId}_${fixedFileVersion}.so`;
-        const name = additionalData.overrideDebugSoName ?? nameOverride ?? debugVersionedName;
-        qpmSharedFile.config.info.additionalData.debugSoLink = `${download}/${name}`;
-    }
-    if (qmod) {
-        qpmSharedFile.config.info.additionalData.modLink = `${download}/${qmod}`;
-    }
-    await writeQPM(qpmSharedPath, qpmSharedFile);
-    const git = octokit.rest.git;
-    await core.group('Publish', async () => {
-        // create branch
-        // reference https://github.com/peterjgrainger/action-create-branch/blob/c2800a3a9edbba2218da6861fa46496cf8f3195a/src/create-branch.ts#L3
-        const branchHead = `heads/${branch}`;
-        const branchRef = `refs/${branchHead}`;
-        core.info('Getting data');
-        // get current repo data
-        const lastCommitSha = github.context.sha;
-        const lastCommit = await git.getCommit({
-            ...github.context.repo,
-            commit_sha: lastCommitSha
-        });
-        try {
-            core.info('creating new branch');
-            await git.createRef({
-                ...github.context.repo,
-                ref: branchRef,
-                sha: lastCommitSha,
-                key: branchRef
-            });
-        }
-        catch (e) {
-            core.warning(`Creating new branch ${branch} failed due to ${e}`);
-        }
-        core.info('Creating commit');
-        // create commit
-        const newTree = await git.createTree({
-            ...github.context.repo,
-            tree: [
-                {
-                    content: JSON.stringify(qpmSharedFile),
-                    path: qpmSharedPath,
-                    mode: '100644'
-                },
-                {
-                    content: JSON.stringify(qpmFile),
-                    path: qpmPath,
-                    mode: '100644'
-                }
-            ],
-            base_tree: lastCommit.data.tree.sha
-        });
-        const commit = await git.createCommit({
-            ...github.context.repo,
-            parents: [lastCommitSha],
-            message: 'Update version and post restore',
-            tree: newTree.data.sha
-        });
-        // update branch
-        core.info(`Updating branch ${branchRef} ${commit.data.sha}`);
-        await git.updateRef({
-            ...github.context.repo,
-            ref: branchHead,
-            sha: commit.data.sha,
-            force: true
-        });
-    });
-    // do github stuff
-}
-async function publishRun(params) {
-    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
-    const octokit = github.getOctokit(token);
-    await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-    await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
-}
-
-;// CONCATENATED MODULE: ./src/post.ts
-
-
-const parameters = getActionParameters();
-if (parameters.publish === PublishMode.late) {
-    publishRun(parameters);
-}
-
-})();
-
+/******/ 
+/******/ // startup
+/******/ // Load entry module and return exports
+/******/ // This entry module used 'module' so it can't be inlined
+/******/ var __webpack_exports__ = __nccwpck_require__(7051);
+/******/ __webpack_exports__ = await __webpack_exports__;
+/******/ 
 
 //# sourceMappingURL=index.js.map

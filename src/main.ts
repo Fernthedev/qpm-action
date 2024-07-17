@@ -107,12 +107,11 @@ async function downloadQpmBleeding(
   // get latest workflow
   const workflowId = workflowRuns[workflowRuns.length - 1]
 
-  
   core.debug(`Looking for workflow artifacts`)
   const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.run_number
+    run_id: workflowId.id
   })
 
   // Choose the matching workflow run based on the provided ref or the latest branch
