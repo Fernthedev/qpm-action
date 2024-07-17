@@ -1,5 +1,5 @@
 import { exec } from 'child_process'
-import { getExecOutput as githubExec } from '@actions/exec'
+import { ExecOutput, getExecOutput as githubExec } from '@actions/exec'
 import * as core from '@actions/core'
 import stripAnsi from 'strip-ansi'
 
@@ -8,11 +8,11 @@ export enum PublishMode {
   late = 'late'
 }
 
-export function getReleaseDownloadLink(user: string, repo: string, version: string) {
+export function getReleaseDownloadLink(user: string, repo: string, version: string): string {
   return `https://github.com/${user}/${repo}/releases/download/${version}`
 }
 
-export async function execAsync(command: string) {
+export async function execAsync(command: string): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(command, (err, stout, sterr) => {
       if (err) {
@@ -23,7 +23,7 @@ export async function execAsync(command: string) {
     })
   })
 }
-export async function githubExecAsync(command: string) {
+export async function githubExecAsync(command: string): Promise<ExecOutput> {
   const output = await githubExec(command)
   output.stdout = stripAnsi(output.stdout)
   output.stderr = stripAnsi(output.stderr)
@@ -34,6 +34,7 @@ function stringOrUndefined(str: string): string | undefined {
   return str.trim() === '' ? undefined : str
 }
 
+//eslint-ignore @typescript-eslint/explicit-function-return-type
 export function getActionParameters() {
   const publish: PublishMode | undefined = stringOrUndefined('publish') as PublishMode
   const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))

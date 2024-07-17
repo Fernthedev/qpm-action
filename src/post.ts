@@ -4,5 +4,5 @@ import { PublishMode, getActionParameters } from './utils.js'
 const parameters = getActionParameters()
 
 if (parameters.publish === PublishMode.late) {
-  publishRun(parameters)
+  await publishRun(parameters)
 }
