@@ -89,10 +89,12 @@ async function downloadQpmBleeding(
   core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   // List artifacts for the QPM repository
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
+    status: 'success',
+    exclude_pull_requests: true,
+    branch: QPM_REPOSITORY_BRANCH
   })
 
   const workflowRuns = workflowRunsResult.data.workflow_runs
