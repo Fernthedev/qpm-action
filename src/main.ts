@@ -44,11 +44,16 @@ async function downloadQpm(
     return path.join(cachedPath, 'qpm')
   }
 
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
-  })
+  // List artifacts for the QPM repository
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo(
+    {
+      owner: QPM_REPOSITORY_OWNER,
+      repo: QPM_REPOSITORY_NAME,
+      status: 'success',
+      exclude_pull_requests: true,
+      branch: QPM_REPOSITORY_BRANCH
+    }
+  )
 
   const workflowRuns = workflowRunsResult.data.workflow_runs.sort(
     (a, b) => a.run_number - b.run_number
