@@ -33182,7 +33182,7 @@ function stringOrUndefined(str) {
 }
 //eslint-ignore @typescript-eslint/explicit-function-return-type
 function getActionParameters() {
-    const publish = stringOrUndefined('publish');
+    const publish = stringOrUndefined(core.getInput('publish'));
     const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
     const version = stringOrUndefined(core.getInput('version'));
     const tag = stringOrUndefined(core.getInput('tag'));

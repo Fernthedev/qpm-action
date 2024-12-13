@@ -36,7 +36,7 @@ function stringOrUndefined(str: string): string | undefined {
 
 //eslint-ignore @typescript-eslint/explicit-function-return-type
 export function getActionParameters() {
-  const publish: PublishMode | undefined = stringOrUndefined('publish') as PublishMode
+  const publish: PublishMode | undefined = stringOrUndefined(core.getInput('publish')) as PublishMode
   const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))
   const version: string | undefined = stringOrUndefined(core.getInput('version'))
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
