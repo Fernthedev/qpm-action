@@ -1,5 +1,5 @@
 import { exec } from 'child_process'
-import { ExecOutput, getExecOutput as githubExec } from '@actions/exec'
+import { ExecOptions, ExecOutput, getExecOutput as githubExec } from '@actions/exec'
 import * as core from '@actions/core'
 import stripAnsi from 'strip-ansi'
 
@@ -23,8 +23,8 @@ export async function execAsync(command: string): Promise<string> {
     })
   })
 }
-export async function githubExecAsync(command: string): Promise<ExecOutput> {
-  const output = await githubExec(command)
+export async function githubExecAsync(command: string, args?: string[], options?: ExecOptions): Promise<ExecOutput> {
+  const output = await githubExec(command, args, options)
   output.stdout = stripAnsi(output.stdout)
   output.stderr = stripAnsi(output.stderr)
   return output
@@ -45,6 +45,7 @@ export function getActionParameters() {
   const qpmReleaseBin = core.getBooleanInput('qpm_release_bin')
   const qpmDebugBin = core.getBooleanInput('qpm_debug_bin')
   const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'))
+  const packagePath = stringOrUndefined(core.getInput('package_path'))
 
   const cache = core.getBooleanInput('cache')
   const cacheLockfile = core.getBooleanInput('cache_lockfile')
@@ -61,6 +62,7 @@ export function getActionParameters() {
     qpmReleaseBin,
     qpmQmod,
     qpmVersion,
+    packagePath,
     token: myToken,
     publish,
     version,

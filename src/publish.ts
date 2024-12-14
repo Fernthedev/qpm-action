@@ -5,6 +5,7 @@ import * as github from '@actions/github'
 import { QPMPackage, QPMSharedPackage, readQPM, writeQPM } from './qpm_file.js'
 import { QPM_COMMAND_PUBLISH } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
+import path from 'path'
 
 async function doPublish(
   octokit: InstanceType<typeof GitHub>,
@@ -12,11 +13,12 @@ async function doPublish(
   debug: boolean,
   qmod?: string,
   version?: string,
-  tag?: string
+  tag?: string,
+  package_path?: string
 ): Promise<void> {
   core.info('Publishing')
-  const qpmSharedPath = 'qpm.shared.json'
-  const qpmPath = 'qpm.json'
+  const qpmSharedPath = path.join(package_path ?? '.', 'qpm.shared.json')
+  const qpmPath = path.join(package_path ?? '.', 'qpm.json')
   //path.join(
   //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   // process.env.GITHUB_WORKSPACE!,
@@ -130,10 +132,12 @@ async function doPublish(
 }
 
 export async function publishRun(params: ReturnType<typeof getActionParameters>): Promise<void> {
-  const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params
+  const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag, packagePath } = params
 
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
-  await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`)
+  await githubExecAsync('qpm', [QPM_COMMAND_PUBLISH ?? ''], {
+    cwd: packagePath
+  })
 }

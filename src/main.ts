@@ -245,27 +245,31 @@ async function downloadQpmVersion(
 
 export async function run(): Promise<void> {
   try {
-    const qpmFilePath = 'qpm.json'
     const parameters = getActionParameters()
-    const { restore, token, version, qpmVersion } = parameters
+    const { restore, token, version, qpmVersion, packagePath } = parameters
+
+    const qpmFilePath = path.join(packagePath ?? '.', 'qpm.json')
+
     const octokit = github.getOctokit(token)
-    let qmBinaryPath: string | undefined
+    let qpmBinaryPath: string | undefined
 
     if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
       const versionReq = qpmVersion?.split('version@')[1]
       const versionRange = versionReq ? new semver.Range(versionReq) : undefined
 
-      qmBinaryPath = await downloadQpmVersion(octokit, token, versionRange)
+      qpmBinaryPath = await downloadQpmVersion(octokit, token, versionRange)
     } else if (qpmVersion.startsWith('ref@')) {
       let ref: string | undefined = qpmVersion.split('ref@')[1]
       if (ref.trim() === '') ref = undefined
 
-      qmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
+      qpmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
     } else {
       core.error('Unable to parse qpm version, skipping')
     }
 
-    const cachePathOutput = stripAnsi((await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout)
+    let cachePathOutput = (await githubExecAsync(qpmBinaryPath!, [QPM_COMMAND_CACHE_PATH])).stdout
+
+    cachePathOutput = stripAnsi(cachePathOutput)
 
     // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
     const cachePath = cachePathOutput.split('Config path is: ')[1].trim()
@@ -290,7 +294,9 @@ export async function run(): Promise<void> {
     }
 
     if (restore) {
-      await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_RESTORE}`)
+      await githubExecAsync(qpmBinaryPath!, [QPM_COMMAND_RESTORE], {
+        cwd: packagePath
+      })
     }
 
     if (parameters.cache) {

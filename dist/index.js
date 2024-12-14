@@ -73176,6 +73176,7 @@ var cache = __nccwpck_require__(7799);
 var external_fs_ = __nccwpck_require__(7147);
 // EXTERNAL MODULE: external "path"
 var external_path_ = __nccwpck_require__(1017);
+var external_path_default = /*#__PURE__*/__nccwpck_require__.n(external_path_);
 // EXTERNAL MODULE: external "os"
 var external_os_ = __nccwpck_require__(2037);
 ;// CONCATENATED MODULE: ./src/api.ts
@@ -73265,8 +73266,8 @@ async function execAsync(command) {
         });
     });
 }
-async function githubExecAsync(command) {
-    const output = await (0,lib_exec.getExecOutput)(command);
+async function githubExecAsync(command, args, options) {
+    const output = await (0,lib_exec.getExecOutput)(command, args, options);
     output.stdout = stripAnsi(output.stdout);
     output.stderr = stripAnsi(output.stderr);
     return output;
@@ -73284,6 +73285,7 @@ function getActionParameters() {
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
     const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
+    const packagePath = stringOrUndefined(core.getInput('package_path'));
     const cache = core.getBooleanInput('cache');
     const cacheLockfile = core.getBooleanInput('cache_lockfile');
     const restore = core.getBooleanInput('restore');
@@ -73297,6 +73299,7 @@ function getActionParameters() {
         qpmReleaseBin,
         qpmQmod,
         qpmVersion,
+        packagePath,
         token: myToken,
         publish,
         version,
@@ -73326,10 +73329,11 @@ async function writeQPM(file, qpm) {
 
 
 
-async function doPublish(octokit, release, debug, qmod, version, tag) {
+
+async function doPublish(octokit, release, debug, qmod, version, tag, package_path) {
     core.info('Publishing');
-    const qpmSharedPath = 'qpm.shared.json';
-    const qpmPath = 'qpm.json';
+    const qpmSharedPath = external_path_default().join(package_path ?? '.', 'qpm.shared.json');
+    const qpmPath = external_path_default().join(package_path ?? '.', 'qpm.json');
     //path.join(
     //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     // process.env.GITHUB_WORKSPACE!,
@@ -73425,10 +73429,12 @@ async function doPublish(octokit, release, debug, qmod, version, tag) {
     // do github stuff
 }
 async function publishRun(params) {
-    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
+    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag, packagePath } = params;
     const octokit = github.getOctokit(token);
     await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-    await githubExecAsync(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
+    await githubExecAsync('qpm', [QPM_COMMAND_PUBLISH ?? ''], {
+        cwd: packagePath
+    });
 }
 
 // EXTERNAL MODULE: ./node_modules/semver/index.js
@@ -73611,26 +73617,27 @@ async function downloadQpmVersion(octokit, token, versionReq) {
 }
 async function run() {
     try {
-        const qpmFilePath = 'qpm.json';
         const parameters = getActionParameters();
-        const { restore, token, version, qpmVersion } = parameters;
+        const { restore, token, version, qpmVersion, packagePath } = parameters;
+        const qpmFilePath = external_path_.join(packagePath ?? '.', 'qpm.json');
         const octokit = github.getOctokit(token);
-        let qmBinaryPath;
+        let qpmBinaryPath;
         if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
             const versionReq = qpmVersion?.split('version@')[1];
             const versionRange = versionReq ? new (semver_default()).Range(versionReq) : undefined;
-            qmBinaryPath = await downloadQpmVersion(octokit, token, versionRange);
+            qpmBinaryPath = await downloadQpmVersion(octokit, token, versionRange);
         }
         else if (qpmVersion.startsWith('ref@')) {
             let ref = qpmVersion.split('ref@')[1];
             if (ref.trim() === '')
                 ref = undefined;
-            qmBinaryPath = await downloadQpmBleeding(octokit, token, ref);
+            qpmBinaryPath = await downloadQpmBleeding(octokit, token, ref);
         }
         else {
             core.error('Unable to parse qpm version, skipping');
         }
-        const cachePathOutput = stripAnsi((await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_CACHE_PATH}`)).stdout);
+        let cachePathOutput = (await githubExecAsync(qpmBinaryPath, [QPM_COMMAND_CACHE_PATH])).stdout;
+        cachePathOutput = stripAnsi(cachePathOutput);
         // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
         const cachePath = cachePathOutput.split('Config path is: ')[1].trim();
         const paths = [cachePath];
@@ -73649,7 +73656,9 @@ async function run() {
             writeQPM(qpmFilePath, qpm);
         }
         if (restore) {
-            await githubExecAsync(`${qmBinaryPath} ${QPM_COMMAND_RESTORE}`);
+            await githubExecAsync(qpmBinaryPath, [QPM_COMMAND_RESTORE], {
+                cwd: packagePath
+            });
         }
         if (parameters.cache) {
             await cache.saveCache(paths, cacheKey ?? key);

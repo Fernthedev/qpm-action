@@ -32986,16 +32986,20 @@ const QPM_COMMAND_RESTORE = 'restore';
 const QPM_COMMAND_PUBLISH = 'publish';
 const QPM_COMMAND_CACHE_PATH = 'cache path';
 
+// EXTERNAL MODULE: external "path"
+var external_path_ = __nccwpck_require__(1017);
+var external_path_default = /*#__PURE__*/__nccwpck_require__.n(external_path_);
 ;// CONCATENATED MODULE: ./src/publish.ts
 
 
 
 
 
-async function doPublish(octokit, release, debug, qmod, version, tag) {
+
+async function doPublish(octokit, release, debug, qmod, version, tag, package_path) {
     core.info('Publishing');
-    const qpmSharedPath = 'qpm.shared.json';
-    const qpmPath = 'qpm.json';
+    const qpmSharedPath = external_path_default().join(package_path ?? '.', 'qpm.shared.json');
+    const qpmPath = external_path_default().join(package_path ?? '.', 'qpm.json');
     //path.join(
     //  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     // process.env.GITHUB_WORKSPACE!,
@@ -33091,10 +33095,12 @@ async function doPublish(octokit, release, debug, qmod, version, tag) {
     // do github stuff
 }
 async function publishRun(params) {
-    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag } = params;
+    const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag, packagePath } = params;
     const octokit = github.getOctokit(token);
     await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-    await (0,utils/* githubExecAsync */.M7)(`qpm ${QPM_COMMAND_PUBLISH} "${publishToken ?? ''}"`);
+    await (0,utils/* githubExecAsync */.M7)('qpm', [QPM_COMMAND_PUBLISH ?? ''], {
+        cwd: packagePath
+    });
 }
 
 
@@ -33171,8 +33177,8 @@ async function execAsync(command) {
         });
     });
 }
-async function githubExecAsync(command) {
-    const output = await (0,lib_exec.getExecOutput)(command);
+async function githubExecAsync(command, args, options) {
+    const output = await (0,lib_exec.getExecOutput)(command, args, options);
     output.stdout = stripAnsi(output.stdout);
     output.stderr = stripAnsi(output.stderr);
     return output;
@@ -33190,6 +33196,7 @@ function getActionParameters() {
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
     const qpmDebugBin = core.getBooleanInput('qpm_debug_bin');
     const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'));
+    const packagePath = stringOrUndefined(core.getInput('package_path'));
     const cache = core.getBooleanInput('cache');
     const cacheLockfile = core.getBooleanInput('cache_lockfile');
     const restore = core.getBooleanInput('restore');
@@ -33203,6 +33210,7 @@ function getActionParameters() {
         qpmReleaseBin,
         qpmQmod,
         qpmVersion,
+        packagePath,
         token: myToken,
         publish,
         version,
@@ -35161,6 +35169,18 @@ module.exports = JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45,46],"valid"]
 /******/ 			return fn.r ? promise : getResult();
 /******/ 		}, (err) => ((err ? reject(promise[webpackError] = err) : outerResolve(exports)), resolveQueue(queue)));
 /******/ 		queue && (queue.d = 0);
+/******/ 	};
+/******/ })();
+/******/ 
+/******/ /* webpack/runtime/compat get default export */
+/******/ (() => {
+/******/ 	// getDefaultExport function for compatibility with non-harmony modules
+/******/ 	__nccwpck_require__.n = (module) => {
+/******/ 		var getter = module && module.__esModule ?
+/******/ 			() => (module['default']) :
+/******/ 			() => (module);
+/******/ 		__nccwpck_require__.d(getter, { a: getter });
+/******/ 		return getter;
 /******/ 	};
 /******/ })();
 /******/ 

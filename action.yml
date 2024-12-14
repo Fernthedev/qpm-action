@@ -2,6 +2,11 @@ name: 'QPM Action'
 description: 'Provides utilities for qpm CI'
 author: 'Fernthedev'
 inputs:
+  package_path:
+    required: false
+    description: 'Specifies the path to the qpm package'
+    default: '.'
+
   publish:
     required: false
     description:
