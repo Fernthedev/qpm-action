@@ -33098,7 +33098,7 @@ async function publishRun(params) {
     const { token, qpmDebugBin, qpmQmod, qpmReleaseBin, version, publishToken, tag, packagePath } = params;
     const octokit = github.getOctokit(token);
     await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag);
-    await (0,utils/* githubExecAsync */.M7)('qpm', [QPM_COMMAND_PUBLISH ?? ''], {
+    await (0,utils/* githubExecAsync */.M7)('qpm', [QPM_COMMAND_PUBLISH, publishToken ?? ''], {
         cwd: packagePath
     });
 }

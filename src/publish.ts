@@ -137,7 +137,7 @@ export async function publishRun(params: ReturnType<typeof getActionParameters>)
   const octokit = github.getOctokit(token)
 
   await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
-  await githubExecAsync('qpm', [QPM_COMMAND_PUBLISH ?? ''], {
+  await githubExecAsync('qpm', [QPM_COMMAND_PUBLISH, publishToken ?? ''], {
     cwd: packagePath
   })
 }
