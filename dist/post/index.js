@@ -32984,7 +32984,7 @@ const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
 const QPM_REPOSITORY_BRANCH = 'main';
 const QPM_COMMAND_RESTORE = 'restore';
 const QPM_COMMAND_PUBLISH = 'publish';
-const QPM_COMMAND_CACHE_PATH = 'cache path';
+const QPM_COMMAND_CACHE_PATH = (/* unused pure expression or super */ null && (['cache', 'path']));
 
 // EXTERNAL MODULE: external "path"
 var external_path_ = __nccwpck_require__(1017);

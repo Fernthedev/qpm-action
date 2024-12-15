@@ -267,7 +267,7 @@ export async function run(): Promise<void> {
       core.error('Unable to parse qpm version, skipping')
     }
 
-    let cachePathOutput = (await githubExecAsync(qpmBinaryPath!, [QPM_COMMAND_CACHE_PATH])).stdout
+    let cachePathOutput = (await githubExecAsync(qpmBinaryPath!, QPM_COMMAND_CACHE_PATH)).stdout
 
     cachePathOutput = stripAnsi(cachePathOutput)
 

@@ -73209,7 +73209,7 @@ const QPM_REPOSITORY_WORKFLOW_NAME = 'cargo-build';
 const QPM_REPOSITORY_BRANCH = 'main';
 const QPM_COMMAND_RESTORE = 'restore';
 const QPM_COMMAND_PUBLISH = 'publish';
-const QPM_COMMAND_CACHE_PATH = 'cache path';
+const QPM_COMMAND_CACHE_PATH = ['cache', 'path'];
 
 // EXTERNAL MODULE: external "child_process"
 var external_child_process_ = __nccwpck_require__(2081);
@@ -73636,7 +73636,7 @@ async function run() {
         else {
             core.error('Unable to parse qpm version, skipping');
         }
-        let cachePathOutput = (await githubExecAsync(qpmBinaryPath, [QPM_COMMAND_CACHE_PATH])).stdout;
+        let cachePathOutput = (await githubExecAsync(qpmBinaryPath, QPM_COMMAND_CACHE_PATH)).stdout;
         cachePathOutput = stripAnsi(cachePathOutput);
         // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
         const cachePath = cachePathOutput.split('Config path is: ')[1].trim();
