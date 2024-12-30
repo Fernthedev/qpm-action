@@ -11,10 +11,10 @@ async function doPublish(
   octokit: InstanceType<typeof GitHub>,
   release: boolean,
   debug: boolean,
-  qmod?: string,
-  version?: string,
-  tag?: string,
-  package_path?: string
+  qmod: string | undefined,
+  version: string | undefined,
+  tag: string | undefined,
+  package_path: string | undefined
 ): Promise<void> {
   core.info('Publishing')
   const qpmSharedPath = path.join(package_path ?? '.', 'qpm.shared.json')
@@ -136,7 +136,7 @@ export async function publishRun(params: ReturnType<typeof getActionParameters>)
 
   const octokit = github.getOctokit(token)
 
-  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag)
+  await doPublish(octokit, qpmReleaseBin, qpmDebugBin, qpmQmod, version, tag, packagePath)
   await githubExecAsync('qpm', [QPM_COMMAND_PUBLISH, publishToken ?? ''], {
     cwd: packagePath
   })
