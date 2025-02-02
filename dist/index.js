@@ -73174,9 +73174,13 @@ var tool_cache = __nccwpck_require__(7784);
 var cache = __nccwpck_require__(7799);
 // EXTERNAL MODULE: external "fs"
 var external_fs_ = __nccwpck_require__(7147);
+;// CONCATENATED MODULE: external "fs/promises"
+const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
 // EXTERNAL MODULE: external "path"
 var external_path_ = __nccwpck_require__(1017);
 var external_path_default = /*#__PURE__*/__nccwpck_require__.n(external_path_);
+// EXTERNAL MODULE: external "crypto"
+var external_crypto_ = __nccwpck_require__(6113);
 // EXTERNAL MODULE: external "os"
 var external_os_ = __nccwpck_require__(2037);
 ;// CONCATENATED MODULE: ./src/api.ts
@@ -73280,6 +73284,7 @@ function getActionParameters() {
     const publish = stringOrUndefined(core.getInput('publish'));
     const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
     const version = stringOrUndefined(core.getInput('version'));
+    const resolveNdk = core.getBooleanInput('resolve_ndk');
     const tag = stringOrUndefined(core.getInput('tag'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
@@ -73303,6 +73308,7 @@ function getActionParameters() {
         token: myToken,
         publish,
         version,
+        resolveNdk,
         tag,
         cache,
         cacheLockfile,
@@ -73311,8 +73317,6 @@ function getActionParameters() {
     };
 }
 
-;// CONCATENATED MODULE: external "fs/promises"
-const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("fs/promises");
 ;// CONCATENATED MODULE: ./src/qpm_file.ts
 
 async function readQPM(file) {
@@ -73454,6 +73458,8 @@ var semver_default = /*#__PURE__*/__nccwpck_require__.n(semver);
 
 
 
+
+
 function lookForRef(e, ref) {
     return e?.head_sha?.startsWith(ref) || e?.head_branch === ref;
 }
@@ -73465,7 +73471,7 @@ function lookForLatestBranch(e) {
  **/
 async function checkIfQpmExists(version) {
     const cachedPath = tool_cache.find('qpm', version);
-    if (external_fs_.existsSync(cachedPath)) {
+    if (await external_fs_.existsSync(cachedPath)) {
         core.debug('Using existing qpm tool cached');
         core.addPath(cachedPath);
         return external_path_.join(cachedPath, 'qpm');
@@ -73535,8 +73541,8 @@ async function downloadQpmBleeding(octokit, token, ref) {
     core.debug(`Added ${cachedPath} to path`);
     // Display information about cached files
     await core.group('cache files', async () => {
-        for (const file of external_fs_.readdirSync(cachedPath)) {
-            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
+        for (const file of (await promises_namespaceObject.readdir(cachedPath))) {
+            core.debug(`${file} ${(await promises_namespaceObject.stat(external_path_.join(cachedPath, file))).isFile()}`);
         }
         return Promise.resolve();
     });
@@ -73605,8 +73611,8 @@ async function downloadQpmVersion(octokit, token, versionReq) {
     core.info(`Added ${cachedPath} to path`);
     // Display information about cached files
     await core.group('cache files', async () => {
-        for (const file of external_fs_.readdirSync(cachedPath)) {
-            core.debug(`${file} ${external_fs_.statSync(external_path_.join(cachedPath, file)).isFile()}`);
+        for (const file of (await promises_namespaceObject.readdir(cachedPath))) {
+            core.debug(`${file} ${(await promises_namespaceObject.stat(external_path_.join(cachedPath, file))).isFile()}`);
         }
         return Promise.resolve();
     });
@@ -73618,8 +73624,15 @@ async function downloadQpmVersion(octokit, token, versionReq) {
 async function run() {
     try {
         const parameters = getActionParameters();
-        const { restore, token, version, qpmVersion, packagePath } = parameters;
+        const { restore, token, version, resolveNdk = true, qpmVersion, packagePath } = parameters;
         const qpmFilePath = external_path_.join(packagePath ?? '.', 'qpm.json');
+        const sharedQpmFilePath = external_path_.join(packagePath ?? '.', 'qpm.shared.json');
+        const sharedQpmFileHash = await (async () => {
+            if (external_fs_.existsSync(sharedQpmFilePath)) {
+                return external_crypto_.createHash('sha256').update((await promises_namespaceObject.readFile(sharedQpmFilePath))).digest('hex');
+            }
+            return null;
+        })();
         const octokit = github.getOctokit(token);
         let qpmBinaryPath;
         if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
@@ -73641,12 +73654,29 @@ async function run() {
         // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
         const cachePath = cachePathOutput.split('Config path is: ')[1].trim();
         const paths = [cachePath];
-        let cacheKey;
-        const key = 'qpm-cache-';
+        const key = `qpm-cache-${sharedQpmFileHash ?? ''}`;
         if (parameters.cache) {
             core.info(`Restoring cache at ${paths}`);
             const restoreKeys = ['qpm-cache-'];
-            cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true);
+            await cache.restoreCache(paths, key, restoreKeys, undefined, true);
+        }
+        // Resolve the NDK and download it if necessary
+        if (resolveNdk) {
+            const qpm = await readQPM(qpmFilePath);
+            const ndk = qpm.workspace?.ndk;
+            const ndkCacheKey = `qpm-ndk-${ndk}`;
+            const ndkPath = external_path_.resolve(external_path_.join(cachePath, '..', 'ndk'));
+            let cacheHit = undefined;
+            if (parameters.cache) {
+                core.info(`Restording NDK cache for ${ndk}`);
+                cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-']);
+            }
+            core.info(`Resolving NDK for ${ndk}`);
+            await githubExecAsync(qpmBinaryPath, ['ndk', 'resolve', '-d']);
+            if (parameters.cache && !cacheHit) {
+                core.info(`Saving NDK cache for ${ndk}`);
+                await cache.saveCache([ndkPath], ndkCacheKey);
+            }
         }
         // Update version
         if (version) {
@@ -73661,7 +73691,7 @@ async function run() {
             });
         }
         if (parameters.cache) {
-            await cache.saveCache(paths, cacheKey ?? key);
+            await cache.saveCache(paths, key);
         }
         if (parameters.publish === PublishMode.now) {
             publishRun(parameters);
