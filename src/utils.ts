@@ -39,6 +39,7 @@ export function getActionParameters() {
   const publish: PublishMode | undefined = stringOrUndefined(core.getInput('publish')) as PublishMode
   const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))
   const version: string | undefined = stringOrUndefined(core.getInput('version'))
+  const resolveNdk = core.getBooleanInput('resolve_ndk')
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
 
@@ -66,6 +67,7 @@ export function getActionParameters() {
     token: myToken,
     publish,
     version,
+    resolveNdk,
     tag,
     cache,
     cacheLockfile,

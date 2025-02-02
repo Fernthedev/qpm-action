@@ -3,7 +3,9 @@ import * as github from '@actions/github'
 import * as tc from '@actions/tool-cache'
 import * as cache from '@actions/cache'
 import * as fs from 'fs'
+import * as fsAsync from 'fs/promises'
 import * as path from 'path'
+import * as crypto from 'crypto';
 
 import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
 import {
@@ -47,7 +49,7 @@ function lookForLatestBranch(e: WorkflowRun) {
 async function checkIfQpmExists(version: string) {
   const cachedPath = tc.find('qpm', version)
 
-  if (fs.existsSync(cachedPath)) {
+  if (await fs.existsSync(cachedPath)) {
     core.debug('Using existing qpm tool cached')
     core.addPath(cachedPath)
     return path.join(cachedPath, 'qpm')
@@ -141,8 +143,8 @@ async function downloadQpmBleeding(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of fs.readdirSync(cachedPath!)) {
-      core.debug(`${file} ${fs.statSync(path.join(cachedPath!, file)).isFile()}`)
+    for (const file of (await fsAsync.readdir(cachedPath!))) {
+      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
   })
@@ -230,8 +232,8 @@ async function downloadQpmVersion(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of fs.readdirSync(cachedPath!)) {
-      core.debug(`${file} ${fs.statSync(path.join(cachedPath!, file)).isFile()}`)
+    for (const file of (await fsAsync.readdir(cachedPath!))) {
+      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
   })
@@ -246,9 +248,16 @@ async function downloadQpmVersion(
 export async function run(): Promise<void> {
   try {
     const parameters = getActionParameters()
-    const { restore, token, version, qpmVersion, packagePath } = parameters
+    const { restore, token, version, resolveNdk = true, qpmVersion, packagePath } = parameters
 
     const qpmFilePath = path.join(packagePath ?? '.', 'qpm.json')
+    const sharedQpmFilePath = path.join(packagePath ?? '.', 'qpm.shared.json')
+    const sharedQpmFileHash = await (async () => {
+      if (fs.existsSync(sharedQpmFilePath)) {
+        return crypto.createHash('sha256').update((await fsAsync.readFile(sharedQpmFilePath))).digest('hex')
+      }
+      return null
+    })()
 
     const octokit = github.getOctokit(token)
     let qpmBinaryPath: string | undefined
@@ -275,12 +284,33 @@ export async function run(): Promise<void> {
     const cachePath = cachePathOutput.split('Config path is: ')[1].trim()
 
     const paths = [cachePath]
-    let cacheKey: string | undefined
-    const key = 'qpm-cache-'
+    const key = `qpm-cache-${sharedQpmFileHash ?? ''}`
     if (parameters.cache) {
       core.info(`Restoring cache at ${paths}`)
       const restoreKeys = ['qpm-cache-']
-      cacheKey = await cache.restoreCache(paths, key, restoreKeys, undefined, true)
+      await cache.restoreCache(paths, key, restoreKeys, undefined, true)
+    }
+
+    // Resolve the NDK and download it if necessary
+    if (resolveNdk) {
+      const qpm = await readQPM<QPMPackage>(qpmFilePath)
+      const ndk = qpm.workspace?.ndk
+      const ndkCacheKey = `qpm-ndk-${ndk}`
+      const ndkPath = path.resolve(path.join(cachePath, '..', 'ndk'))
+      let cacheHit: string | undefined = undefined;
+
+      if (parameters.cache) {
+        core.info(`Restording NDK cache for ${ndk}`)
+        cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-'])
+      }
+
+      core.info(`Resolving NDK for ${ndk}`)
+      await githubExecAsync(qpmBinaryPath!, ['ndk', 'resolve', '-d'])
+
+      if (parameters.cache && !cacheHit) {
+        core.info(`Saving NDK cache for ${ndk}`)
+        await cache.saveCache([ndkPath], ndkCacheKey)
+      }
     }
 
     // Update version
@@ -300,7 +330,7 @@ export async function run(): Promise<void> {
     }
 
     if (parameters.cache) {
-      await cache.saveCache(paths, cacheKey ?? key)
+      await cache.saveCache(paths, key)
     }
 
     if (parameters.publish === PublishMode.now) {

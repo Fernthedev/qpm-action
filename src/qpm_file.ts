@@ -20,6 +20,9 @@ export interface QPMPackage {
       modLink?: string
     }
   }
+  workspace?: {
+    ndk?: string
+  }
 }
 
 export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {

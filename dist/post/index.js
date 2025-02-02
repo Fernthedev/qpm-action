@@ -33191,6 +33191,7 @@ function getActionParameters() {
     const publish = stringOrUndefined(core.getInput('publish'));
     const qpmVersion = stringOrUndefined(core.getInput('qpm_version'));
     const version = stringOrUndefined(core.getInput('version'));
+    const resolveNdk = core.getBooleanInput('resolve_ndk');
     const tag = stringOrUndefined(core.getInput('tag'));
     const publishToken = stringOrUndefined(core.getInput('publish_token'));
     const qpmReleaseBin = core.getBooleanInput('qpm_release_bin');
@@ -33214,6 +33215,7 @@ function getActionParameters() {
         token: myToken,
         publish,
         version,
+        resolveNdk,
         tag,
         cache,
         cacheLockfile,
