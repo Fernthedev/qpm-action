@@ -20,10 +20,8 @@ inputs:
 
   resolve_ndk:
     required: false
-    description:
-      'Should NDK be downloaded on restore'
-    default: 'true'
-
+    description: 'Should NDK be downloaded on restore'
+    default: 'false'
 
   version:
     required: false

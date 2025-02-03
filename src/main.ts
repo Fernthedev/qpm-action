@@ -5,7 +5,7 @@ import * as cache from '@actions/cache'
 import * as fs from 'fs'
 import * as fsAsync from 'fs/promises'
 import * as path from 'path'
-import * as crypto from 'crypto';
+import * as crypto from 'crypto'
 
 import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
 import {
@@ -143,7 +143,7 @@ async function downloadQpmBleeding(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of (await fsAsync.readdir(cachedPath!))) {
+    for (const file of await fsAsync.readdir(cachedPath!)) {
       core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
@@ -232,7 +232,7 @@ async function downloadQpmVersion(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of (await fsAsync.readdir(cachedPath!))) {
+    for (const file of await fsAsync.readdir(cachedPath!)) {
       core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
@@ -248,13 +248,16 @@ async function downloadQpmVersion(
 export async function run(): Promise<void> {
   try {
     const parameters = getActionParameters()
-    const { restore, token, version, resolveNdk = true, qpmVersion, packagePath } = parameters
+    const { restore, token, version, resolveNdk, qpmVersion, packagePath } = parameters
 
     const qpmFilePath = path.join(packagePath ?? '.', 'qpm.json')
     const sharedQpmFilePath = path.join(packagePath ?? '.', 'qpm.shared.json')
     const sharedQpmFileHash = await (async () => {
       if (fs.existsSync(sharedQpmFilePath)) {
-        return crypto.createHash('sha256').update((await fsAsync.readFile(sharedQpmFilePath))).digest('hex')
+        return crypto
+          .createHash('sha256')
+          .update(await fsAsync.readFile(sharedQpmFilePath))
+          .digest('hex')
       }
       return null
     })()
@@ -297,7 +300,7 @@ export async function run(): Promise<void> {
       const ndk = qpm.workspace?.ndk
       const ndkCacheKey = `qpm-ndk-${ndk}`
       const ndkPath = path.resolve(path.join(cachePath, '..', 'ndk'))
-      let cacheHit: string | undefined = undefined;
+      let cacheHit: string | undefined = undefined
 
       if (parameters.cache) {
         core.info(`Restording NDK cache for ${ndk}`)
