@@ -303,7 +303,7 @@ export async function run(): Promise<void> {
       let cacheHit: string | undefined = undefined
 
       if (parameters.cache) {
-        core.info(`Restording NDK cache for ${ndk}`)
+        core.info(`Restoring NDK cache for ${ndk}`)
         cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-'])
       }
 
