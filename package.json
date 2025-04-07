@@ -86,22 +86,22 @@
     "strip-ansi": "^7.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.21.0",
+    "@eslint/js": "^9.24.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.14.9",
     "@vercel/ncc": "^0.38.3",
     "eslint": "^9.7.0",
     "eslint-plugin-github": "^5.1.8",
     "eslint-plugin-jest": "^27.9.0",
-    "eslint-plugin-jsonc": "^2.19.1",
-    "eslint-plugin-prettier": "^5.2.3",
+    "eslint-plugin-jsonc": "^2.20.0",
+    "eslint-plugin-prettier": "^5.2.6",
     "globals": "^15.9.0",
     "jest": "^29.7.0",
     "js-yaml": "^4.1.0",
     "prettier": "^3.5.3",
     "prettier-eslint": "^16.3.0",
-    "ts-jest": "^29.2.6",
-    "typescript": "^5.8.2",
+    "ts-jest": "^29.3.1",
+    "typescript": "^5.8.3",
     "typescript-eslint": "^7.16.1"
   },
   "volta": {
