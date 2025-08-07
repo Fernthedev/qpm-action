@@ -21,7 +21,7 @@ inputs:
   upload_binaries:
     required: false
     description: 'Denotes if the binaries should be uploaded to the release'
-    default: 'true'
+    default: 'false'
 
   qpkg_path:
     required: false
@@ -64,17 +64,6 @@ inputs:
     description: 'Specifies if the action should use caches with qpm.shared.json'
     default: 'true'
 
-  qpm_release_bin:
-    required: false
-    description: 'Specifies the path for the release binary or debug if not specified'
-    default: 'false'
-  qpm_debug_bin:
-    required: false
-    description: 'Specifies the path for the debug binary'
-    default: 'false'
-  qpm_qmod:
-    required: false
-    description: 'Specifies the path for the qmod'
 
   workflow_token:
     required: false

@@ -24,10 +24,11 @@ Usage:
     version: '1.0.0' # Defaults to qpm version, do not include v
     tag: 'v1.0.0' # Defaults to version, this is the Github Release TAG, not version!
 
-    # set to true if applicable, ASSUMES the file is already a relaease asset
-    qpm_release_bin: true
-    qpm_debug_bin: true
+    upload_qmod: true # When publishing, will try to upload all triplet qmods to release
 
-    # Name of qmod in release asset. Assumes exists, same as prior
-    qpm_qmod: 'qmod_name'
+    upload_binaries: false # When publishing, will try to upload all binaries to release
+
+    qpkg_path: 'foo.qpkg' # When publishing, specifies where a QPKG will be stored. If the file does not exist or is unspecified, it will attempt to build the QPKG
+
+    package_path: '.' # Specifies where the qpm.json etc. directory is.
 ```
