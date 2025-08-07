@@ -17,6 +17,7 @@ inputs:
     required: false
     description:
       'The version of QPM to download. Defaults to latest release. Use version@^1.0.0 for release or ref@main for main'
+    default: 'version@^1.0.0'
 
   resolve_ndk:
     required: false
