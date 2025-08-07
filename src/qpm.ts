@@ -1,27 +1,53 @@
+import * as fs from 'fs/promises'
+import * as fsOld from 'fs'
+
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import * as tc from '@actions/tool-cache'
 import * as cache from '@actions/cache'
-import * as fs from 'fs'
-import * as fsAsync from 'fs/promises'
 import * as path from 'path'
-import * as crypto from 'crypto'
-
-import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
 import {
-  QPM_COMMAND_CACHE_PATH,
-  QPM_COMMAND_RESTORE,
   QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
   QPM_REPOSITORY_OWNER,
   QPM_REPOSITORY_WORKFLOW_NAME
 } from './constants.js'
+import { githubExecAsync } from './utils.js'
 import { GitHub } from '@actions/github/lib/utils.js'
-import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
-import { downloadQpmBleeding, downloadQpmVersion, QPMPackage, readQPM, writeQPM } from './qpm.js'
-import { publishRun } from './publish.js'
-import stripAnsi from 'strip-ansi'
 import semver from 'semver'
+import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
+
+export type TripletId = string;
+
+export interface QPMSharedPackage {
+  config: QPMPackage
+}
+
+export interface QPMPackage {
+  info: {
+    name: string
+    id: string
+    version: string
+    additionalData: {
+      branchName?: string
+      headersOnly?: boolean
+      overrideSoName?: string
+      overrideDebugSoName?: string
+      soLink?: string
+      debugSoLink?: string
+      modLink?: string
+    }
+  }
+}
+
+export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {
+  return JSON.parse((await fs.readFile(file, undefined)).toString())
+}
+
+export async function writeQPM(file: fsOld.PathLike, qpm: QPMPackage | QPMSharedPackage): Promise<void> {
+  const qpmStr = JSON.stringify(qpm)
+  await fs.writeFile(file, qpmStr)
+}
 
 type WorkflowRun = {
   /** @example 10 */
@@ -49,7 +75,7 @@ function lookForLatestBranch(e: WorkflowRun) {
 async function checkIfQpmExists(version: string) {
   const cachedPath = tc.find('qpm', version)
 
-  if (await fs.existsSync(cachedPath)) {
+  if (fsOld.existsSync(cachedPath)) {
     core.debug('Using existing qpm tool cached')
     core.addPath(cachedPath)
     return path.join(cachedPath, 'qpm')
@@ -63,8 +89,9 @@ async function fixupQpm(execFile: string) {
   await githubExecAsync(`chmod +x ${execFile}`)
   await githubExecAsync(`ln ${execFile} ${path.join(parent, 'qpm-rust')}`)
 }
+
 // Function to download QPM
-async function downloadQpmBleeding(
+export async function downloadQpmBleeding(
   octokit: InstanceType<typeof GitHub>,
   token: string,
   ref: string | undefined
@@ -91,16 +118,11 @@ async function downloadQpmBleeding(
   core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   // List artifacts for the QPM repository
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    status: 'success',
-    exclude_pull_requests: true,
-
-    branch: QPM_REPOSITORY_BRANCH
+    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
   })
-
-  core.debug(`Found ${workflowRunsResult.data.total_count} workflows`)
 
   const workflowRuns = workflowRunsResult.data.workflow_runs
     .filter(e => matchCheck(e))
@@ -109,11 +131,10 @@ async function downloadQpmBleeding(
   // get latest workflow
   const workflowId = workflowRuns[workflowRuns.length - 1]
 
-  core.debug(`Looking for workflow artifacts`)
   const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.id
+    run_id: workflowId.run_number
   })
 
   // Choose the matching workflow run based on the provided ref or the latest branch
@@ -143,8 +164,8 @@ async function downloadQpmBleeding(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of await fsAsync.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
+    for (const file of fsOld.readdirSync(cachedPath!)) {
+      core.debug(`${file} ${fsOld.statSync(path.join(cachedPath!, file)).isFile()}`)
     }
     return Promise.resolve()
   })
@@ -156,7 +177,7 @@ async function downloadQpmBleeding(
   return execFile
 }
 
-async function downloadQpmVersion(
+export async function downloadQpmVersion(
   octokit: InstanceType<typeof GitHub>,
   token: string,
   versionReq: semver.Range | undefined
@@ -232,8 +253,8 @@ async function downloadQpmVersion(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of await fsAsync.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
+    for (const file of fsOld.readdirSync(cachedPath!)) {
+      core.debug(`${file} ${fsOld.statSync(path.join(cachedPath!, file)).isFile()}`)
     }
     return Promise.resolve()
   })
@@ -243,104 +264,4 @@ async function downloadQpmVersion(
   await fixupQpm(execFile)
 
   return execFile
-}
-
-export async function run(): Promise<void> {
-  try {
-    const parameters = getActionParameters()
-    const { restore, token, version, resolveNdk, qpmVersion, packagePath } = parameters
-
-    const qpmFilePath = path.join(packagePath ?? '.', 'qpm.json')
-    const sharedQpmFilePath = path.join(packagePath ?? '.', 'qpm.shared.json')
-    const sharedQpmFileHash = await (async () => {
-      if (fs.existsSync(sharedQpmFilePath)) {
-        return crypto
-          .createHash('sha256')
-          .update(await fsAsync.readFile(sharedQpmFilePath))
-          .digest('hex')
-      }
-      return null
-    })()
-
-    const octokit = github.getOctokit(token)
-    let qpmBinaryPath: string | undefined
-
-    if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
-      const versionReq = qpmVersion?.split('version@')[1]
-      const versionRange = versionReq ? new semver.Range(versionReq) : undefined
-
-      qpmBinaryPath = await downloadQpmVersion(octokit, token, versionRange)
-    } else if (qpmVersion.startsWith('ref@')) {
-      let ref: string | undefined = qpmVersion.split('ref@')[1]
-      if (ref.trim() === '') ref = undefined
-
-      qpmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
-    } else {
-      core.error('Unable to parse qpm version, skipping')
-    }
-
-    let cachePathOutput = (await githubExecAsync(qpmBinaryPath!, QPM_COMMAND_CACHE_PATH)).stdout
-
-    cachePathOutput = stripAnsi(cachePathOutput)
-
-    // Config path is: (fancycolor)E:\SSDUse\AppData\QPM_Temp
-    const cachePath = cachePathOutput.split('Config path is: ')[1].trim()
-
-    const paths = [cachePath]
-    const key = `qpm-cache-${sharedQpmFileHash ?? ''}`
-    if (parameters.cache) {
-      core.info(`Restoring cache at ${paths}`)
-      const restoreKeys = ['qpm-cache-']
-      await cache.restoreCache(paths, key, restoreKeys, undefined, true)
-    }
-
-    // Resolve the NDK and download it if necessary
-    if (resolveNdk) {
-      const qpm = await readQPM<QPMPackage>(qpmFilePath)
-      const ndk = qpm.workspace?.ndk
-      const ndkCacheKey = `qpm-ndk-${ndk}`
-      const ndkPath = path.resolve(path.join(cachePath, '..', 'ndk'))
-      let cacheHit: string | undefined = undefined
-
-      if (parameters.cache) {
-        core.info(`Restoring NDK cache for ${ndk}`)
-        cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-'])
-      }
-
-      core.info(`Resolving NDK for ${ndk}`)
-      await githubExecAsync(qpmBinaryPath!, ['ndk', 'resolve', '-d'])
-
-      if (parameters.cache && !cacheHit) {
-        core.info(`Saving NDK cache for ${ndk}`)
-        await cache.saveCache([ndkPath], ndkCacheKey)
-      }
-    }
-
-    // Update version
-    if (version) {
-      core.info(`Using version ${version}`)
-      const qpm = await readQPM<QPMPackage>(qpmFilePath)
-
-      qpm.info.version = version
-
-      writeQPM(qpmFilePath, qpm)
-    }
-
-    if (restore) {
-      await githubExecAsync(qpmBinaryPath!, [QPM_COMMAND_RESTORE], {
-        cwd: packagePath
-      })
-    }
-
-    if (parameters.cache) {
-      await cache.saveCache(paths, key)
-    }
-
-    if (parameters.publish === PublishMode.now) {
-      publishRun(parameters)
-    }
-  } catch (error) {
-    if (error instanceof Error) core.setFailed(error.message)
-    core.isDebug
-  }
 }
