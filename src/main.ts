@@ -7,7 +7,7 @@ import * as fsAsync from 'fs/promises'
 import * as path from 'path'
 import * as crypto from 'crypto'
 
-import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
+import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME } from './api.js'
 import {
   QPM_COMMAND_CACHE_PATH,
   QPM_COMMAND_RESTORE,
@@ -63,186 +63,25 @@ async function fixupQpm(execFile: string) {
   await githubExecAsync(`chmod +x ${execFile}`)
   await githubExecAsync(`ln ${execFile} ${path.join(parent, 'qpm-rust')}`)
 }
-// Function to download QPM
-async function downloadQpmBleeding(
-  octokit: InstanceType<typeof GitHub>,
-  token: string,
-  ref: string | undefined
-): Promise<string | undefined> {
-  // Get the branch information for QPM repository
-  const qpmBranch = await octokit.rest.repos.getBranch({
-    branch: QPM_REPOSITORY_BRANCH,
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME
-  })
 
-  // Determine the target version based on the provided ref or use the latest commit SHA
-  const qpmTargetVersion = ref ?? qpmBranch.data.commit.sha
-  core.debug(`Looking for qpm in cache version ${qpmTargetVersion}`)
+async function resolveNDK(ndkPath: string, useCache: boolean) {
+  const ndk = path.basename((await githubExecAsync(QPM_EXECUTABLE_NAME!, ['ndk', 'resolve'])).stdout.trim())
 
-  // Check if QPM is already in the cache
-  let cachedPath = await checkIfQpmExists(qpmTargetVersion)
-  if (cachedPath) {
-    return cachedPath
+  const ndkCacheKey = `qpm-ndk-${ndk}`
+  let cacheHit: string | undefined = undefined
+
+  if (useCache) {
+    core.info(`Restoring NDK cache for ${ndk}`)
+    cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-'])
   }
 
-  // Get the expected artifact name for QPM
-  const expectedArtifactName = getQPM_ArtifactExecutableName()
-  core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
+  core.info(`Resolving NDK for ${ndk}`)
+  await githubExecAsync(QPM_EXECUTABLE_NAME!, ['ndk', 'resolve', '-d'])
 
-  // List artifacts for the QPM repository
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    status: 'success',
-    exclude_pull_requests: true,
-
-    branch: QPM_REPOSITORY_BRANCH
-  })
-
-  core.debug(`Found ${workflowRunsResult.data.total_count} workflows`)
-
-  const workflowRuns = workflowRunsResult.data.workflow_runs
-    .filter(e => matchCheck(e))
-    .sort((a, b) => a.run_number - b.run_number)
-
-  // get latest workflow
-  const workflowId = workflowRuns[workflowRuns.length - 1]
-
-  core.debug(`Looking for workflow artifacts`)
-  const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.id
-  })
-
-  // Choose the matching workflow run based on the provided ref or the latest branch
-  const matchCheck = ref !== undefined ? (e: WorkflowRun) => lookForRef(e, ref) : lookForLatestBranch
-
-  // Find the QPM artifact in the list
-  const artifact = listedArtifacts.data.artifacts.find(
-    e => e.name === expectedArtifactName && e.workflow_run && matchCheck(e.workflow_run)
-  )
-
-  // Handle the case when no artifact is found
-  if (!artifact) {
-    core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH}`)
+  if (useCache && !cacheHit) {
+    core.info(`Saving NDK cache for ${ndk}`)
+    await cache.saveCache([ndkPath], ndkCacheKey)
   }
-
-  // Download the QPM artifact
-  const url = artifact!.archive_download_url
-  core.debug(`Downloading from ${url}`)
-
-  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
-  const qpmToolExtract = await tc.extractZip(qpmTool)
-  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion)
-
-  // Add the QPM path to the system path
-  core.addPath(cachedPath)
-  core.debug(`Added ${cachedPath} to path`)
-
-  // Display information about cached files
-  await core.group('cache files', async () => {
-    for (const file of await fsAsync.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
-    }
-    return Promise.resolve()
-  })
-
-  // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, 'qpm')
-  await fixupQpm(execFile)
-
-  return execFile
-}
-
-async function downloadQpmVersion(
-  octokit: InstanceType<typeof GitHub>,
-  token: string,
-  versionReq: semver.Range | undefined
-): Promise<string | undefined> {
-  // Determine the target version based on the provided ref or use the latest release
-  let qpmTargetReleaseTag: string
-  if (versionReq === undefined) {
-    // Get the branch information for QPM repository
-    const qpmRelease = await octokit.rest.repos.getLatestRelease({
-      branch: QPM_REPOSITORY_BRANCH,
-      owner: QPM_REPOSITORY_OWNER,
-      repo: QPM_REPOSITORY_NAME
-    })
-    qpmTargetReleaseTag = qpmRelease.data.tag_name
-  } else {
-    // Get the branch information for QPM repository
-    const qpmReleases = await octokit.rest.repos.listReleases({
-      branch: QPM_REPOSITORY_BRANCH,
-      owner: QPM_REPOSITORY_OWNER,
-      repo: QPM_REPOSITORY_NAME
-    })
-    qpmReleases.data.sort((a, b) => a.tag_name.localeCompare(b.tag_name)).reverse()
-    const targetQpmRelease = qpmReleases.data.find(x => semver.satisfies(semver.coerce(x.tag_name)!, versionReq))
-    if (targetQpmRelease === undefined) {
-      core.error(`Unable to find valid qpm version for ${versionReq}`)
-    }
-
-    qpmTargetReleaseTag = targetQpmRelease?.tag_name!
-  }
-
-  core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`)
-
-  // Check if QPM is already in the cache
-  let cachedPath = await checkIfQpmExists(qpmTargetReleaseTag)
-  if (cachedPath) {
-    return cachedPath
-  }
-
-  // Get the expected artifact name for QPM
-  const expectedArtifactName = getQPM_ReleaseExecutableName()
-  core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
-
-  // List artifacts for the QPM repository
-  const qpmRelease = await octokit.rest.repos.getReleaseByTag({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    tag: qpmTargetReleaseTag
-  })
-
-  // Find the QPM artifact in the list
-  const artifact = qpmRelease.data.assets.find(a => a.name === expectedArtifactName)
-
-  // Handle the case when no artifact is found
-  if (!artifact) {
-    core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${qpmTargetReleaseTag}`)
-  }
-
-  // Download the QPM artifact
-  const url = artifact!.browser_download_url
-  core.info(`Downloading from ${url}`)
-
-  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
-  core.info(`Downloaded to ${qpmTool}, extracting`)
-
-  const qpmToolExtract = await tc.extractZip(qpmTool)
-
-  core.info(`Extracted to ${qpmToolExtract}, adding to cache`)
-  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag)
-
-  // Add the QPM path to the system path
-  core.addPath(cachedPath)
-  core.info(`Added ${cachedPath} to path`)
-
-  // Display information about cached files
-  await core.group('cache files', async () => {
-    for (const file of await fsAsync.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fsAsync.stat(path.join(cachedPath!, file))).isFile()}`)
-    }
-    return Promise.resolve()
-  })
-
-  // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, 'qpm')
-  await fixupQpm(execFile)
-
-  return execFile
 }
 
 export async function run(): Promise<void> {
@@ -250,8 +89,9 @@ export async function run(): Promise<void> {
     const parameters = getActionParameters()
     const { restore, token, version, resolveNdk, qpmVersion, packagePath } = parameters
 
-    const qpmFilePath = path.join(packagePath ?? '.', 'qpm.json')
-    const sharedQpmFilePath = path.join(packagePath ?? '.', 'qpm.shared.json')
+    const qpmFilePath = path.join(packagePath ?? '.', 'qpm2.json')
+    const sharedQpmFilePath = path.join(packagePath ?? '.', 'qpm2.shared.json')
+
     const sharedQpmFileHash = await (async () => {
       if (fs.existsSync(sharedQpmFilePath)) {
         return crypto
@@ -263,6 +103,8 @@ export async function run(): Promise<void> {
     })()
 
     const octokit = github.getOctokit(token)
+
+    // download QPM
     let qpmBinaryPath: string | undefined
 
     if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
@@ -277,6 +119,11 @@ export async function run(): Promise<void> {
       qpmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
     } else {
       core.error('Unable to parse qpm version, skipping')
+    }
+
+    if (!qpmBinaryPath) {
+      core.setFailed('Unable to download QPM, failing')
+      return
     }
 
     let cachePathOutput = (await githubExecAsync(qpmBinaryPath!, QPM_COMMAND_CACHE_PATH)).stdout
@@ -294,26 +141,18 @@ export async function run(): Promise<void> {
       await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }
 
+    // use existing Actions NDK path if available
+    let ndkCache = process.env['ANDROID_NDK_LATEST_HOME']
+    ndkCache = ndkCache ? path.dirname(ndkCache) : undefined
+    if (ndkCache) {
+      await githubExecAsync(qpmBinaryPath, ['config', 'ndk-path', ndkCache])
+    }
+    ndkCache = ndkCache ?? path.join(cachePath, 'ndk')
+
     // Resolve the NDK and download it if necessary
     if (resolveNdk) {
-      const qpm = await readQPM<QPMPackage>(qpmFilePath)
-      const ndk = qpm.workspace?.ndk
-      const ndkCacheKey = `qpm-ndk-${ndk}`
-      const ndkPath = path.resolve(path.join(cachePath, '..', 'ndk'))
-      let cacheHit: string | undefined = undefined
-
-      if (parameters.cache) {
-        core.info(`Restoring NDK cache for ${ndk}`)
-        cacheHit = await cache.restoreCache([ndkPath], ndkCacheKey, ['qpm-ndk-'])
-      }
-
-      core.info(`Resolving NDK for ${ndk}`)
-      await githubExecAsync(qpmBinaryPath!, ['ndk', 'resolve', '-d'])
-
-      if (parameters.cache && !cacheHit) {
-        core.info(`Saving NDK cache for ${ndk}`)
-        await cache.saveCache([ndkPath], ndkCacheKey)
-      }
+      // set NDK path to the one provided by GitHub actions if available
+      await resolveNDK(ndkCache, parameters.cache)
     }
 
     // Update version
@@ -321,7 +160,7 @@ export async function run(): Promise<void> {
       core.info(`Using version ${version}`)
       const qpm = await readQPM<QPMPackage>(qpmFilePath)
 
-      qpm.info.version = version
+      qpm.version = version
 
       writeQPM(qpmFilePath, qpm)
     }

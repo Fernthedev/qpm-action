@@ -4,6 +4,8 @@ import * as core from '@actions/core/'
 
 import * as node_os from 'os'
 
+export const QPM_EXECUTABLE_NAME = 'qpm2'
+
 // Helper function to get the expected QPM artifact name
 export function getQPM_ArtifactExecutableName() {
   let os: string = node_os.platform()
@@ -11,7 +13,7 @@ export function getQPM_ArtifactExecutableName() {
   if (os === 'win32') os = 'windows'
   if (os === 'darwin') os = 'macos'
 
-  return `${os}-qpm`
+  return `${os}-${QPM_EXECUTABLE_NAME}`
 }
 // Helper function to get the expected QPM artifact name
 export function getQPM_ReleaseExecutableName() {
@@ -21,7 +23,7 @@ export function getQPM_ReleaseExecutableName() {
   if (os === 'win32') os = 'windows'
   if (os === 'darwin') os = 'macos'
 
-  return `qpm-${os}-${arch}.zip`
+  return `${QPM_EXECUTABLE_NAME}-${os}-${arch}.zip`
 }
 
 export async function getOrMakeRelease(octokit: InstanceType<typeof GitHub>, releaseTag: string) {

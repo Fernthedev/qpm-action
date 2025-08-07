@@ -13,6 +13,26 @@ inputs:
       'Denotes if this will publish to QPM qpackages.com. Possible values are: "late", "now" or undefined. Late publish
       will only run if action ran with success'
 
+  upload_qmod:
+    required: false
+    description: 'Denotes if the qmod should be uploaded to the release'
+    default: 'true'
+
+  upload_binaries:
+    required: false
+    description: 'Denotes if the binaries should be uploaded to the release'
+    default: 'true'
+
+  qpkg_path:
+    required: false
+    description: 'Specifies the path to the qpkg file. If not specified, it will be created for publishing'
+    default: ''
+
+  # triplet:
+  #   required: false
+  #   description: 'The triplet to use for restore and build'
+  #   default: ''
+
   qpm_version:
     required: false
     description:
@@ -34,6 +54,7 @@ inputs:
     required: false
     description: 'Whether restore should be called. This will use the cache if possible'
     default: 'true'
+
   cache:
     required: false
     description: 'Specifies if the action should handle caches'

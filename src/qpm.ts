@@ -15,29 +15,36 @@ import {
 import { githubExecAsync } from './utils.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 import semver from 'semver'
-import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } from './api.js'
+import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME } from './api.js'
 
-export type TripletId = string;
+export type TripletId = string | 'default'
 
 export interface QPMSharedPackage {
   config: QPMPackage
 }
 
+export interface QPackage {
+  config: QPMPackage
+  qpkgUrl: string
+
+  qpkgChecksum?: string
+}
+
 export interface QPMPackage {
-  info: {
-    name: string
-    id: string
-    version: string
-    additionalData: {
-      branchName?: string
-      headersOnly?: boolean
-      overrideSoName?: string
-      overrideDebugSoName?: string
-      soLink?: string
-      debugSoLink?: string
-      modLink?: string
+  version: string
+  id: string
+  workspace?: {}
+  triplets: Record<
+    TripletId,
+    {
+      outBinaries?: string[]
+      qmodOutput?: string
+      qmodUrl?: string
+
+      ndk?: string
+      qmod?: string
     }
-  }
+  >
 }
 
 export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {
@@ -73,12 +80,12 @@ function lookForLatestBranch(e: WorkflowRun) {
  * Return the path if QPM exists, otherwise return undefined
  **/
 async function checkIfQpmExists(version: string) {
-  const cachedPath = tc.find('qpm', version)
+  const cachedPath = tc.find('qpm2', version)
 
   if (fsOld.existsSync(cachedPath)) {
     core.debug('Using existing qpm tool cached')
     core.addPath(cachedPath)
-    return path.join(cachedPath, 'qpm')
+    return path.join(cachedPath, 'qpm2')
   }
 
   return undefined
@@ -87,7 +94,7 @@ async function checkIfQpmExists(version: string) {
 async function fixupQpm(execFile: string) {
   const parent = path.dirname(execFile)
   await githubExecAsync(`chmod +x ${execFile}`)
-  await githubExecAsync(`ln ${execFile} ${path.join(parent, 'qpm-rust')}`)
+  // await githubExecAsync(`ln ${execFile} ${path.join(parent, 'qpm-rust')}`)
 }
 
 // Function to download QPM
@@ -118,11 +125,16 @@ export async function downloadQpmBleeding(
   core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
 
   // List artifacts for the QPM repository
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRuns({
+  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    workflow_id: QPM_REPOSITORY_WORKFLOW_NAME
+    status: 'success',
+    exclude_pull_requests: true,
+
+    branch: QPM_REPOSITORY_BRANCH
   })
+
+  core.debug(`Found ${workflowRunsResult.data.total_count} workflows`)
 
   const workflowRuns = workflowRunsResult.data.workflow_runs
     .filter(e => matchCheck(e))
@@ -131,10 +143,11 @@ export async function downloadQpmBleeding(
   // get latest workflow
   const workflowId = workflowRuns[workflowRuns.length - 1]
 
+  core.debug(`Looking for workflow artifacts`)
   const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
     owner: QPM_REPOSITORY_OWNER,
     repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.run_number
+    run_id: workflowId.id
   })
 
   // Choose the matching workflow run based on the provided ref or the latest branch
@@ -164,8 +177,8 @@ export async function downloadQpmBleeding(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of fsOld.readdirSync(cachedPath!)) {
-      core.debug(`${file} ${fsOld.statSync(path.join(cachedPath!, file)).isFile()}`)
+    for (const file of await fs.readdir(cachedPath!)) {
+      core.debug(`${file} ${(await fs.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
   })
@@ -253,14 +266,14 @@ export async function downloadQpmVersion(
 
   // Display information about cached files
   await core.group('cache files', async () => {
-    for (const file of fsOld.readdirSync(cachedPath!)) {
-      core.debug(`${file} ${fsOld.statSync(path.join(cachedPath!, file)).isFile()}`)
+    for (const file of await fs.readdir(cachedPath!)) {
+      core.debug(`${file} ${(await fs.stat(path.join(cachedPath!, file))).isFile()}`)
     }
     return Promise.resolve()
   })
 
   // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, 'qpm')
+  const execFile = path.join(cachedPath, QPM_EXECUTABLE_NAME)
   await fixupQpm(execFile)
 
   return execFile

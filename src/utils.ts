@@ -23,8 +23,16 @@ export async function execAsync(command: string): Promise<string> {
     })
   })
 }
-export async function githubExecAsync(command: string, args?: string[], options?: ExecOptions): Promise<ExecOutput> {
-  const output = await githubExec(command, args, options)
+export async function githubExecAsync(
+  command: string,
+  args?: (string | false | undefined)[],
+  options?: ExecOptions
+): Promise<ExecOutput> {
+  const output = await githubExec(
+    command,
+    args?.filter(x => x!).map(x => x! as string),
+    options
+  )
   output.stdout = stripAnsi(output.stdout)
   output.stderr = stripAnsi(output.stderr)
   return output
@@ -38,19 +46,25 @@ function stringOrUndefined(str: string): string | undefined {
 export function getActionParameters() {
   const publish: PublishMode | undefined = stringOrUndefined(core.getInput('publish')) as PublishMode
   const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))
+
+  // publish version
   const version: string | undefined = stringOrUndefined(core.getInput('version'))
-  const resolveNdk = core.getBooleanInput('resolve_ndk')
   const tag: string | undefined = stringOrUndefined(core.getInput('tag'))
+
+  // use NDK in project
+  const resolveNdk = core.getBooleanInput('resolve_ndk')
   const publishToken = stringOrUndefined(core.getInput('publish_token'))
 
-  const qpmReleaseBin = stringOrUndefined(core.getInput('qpm_release_bin'))
-  const qpmDebugBin = stringOrUndefined(core.getInput('qpm_debug_bin'))
-  const qpmQmod = stringOrUndefined(core.getInput('qpm_qmod'))
   const packagePath = stringOrUndefined(core.getInput('package_path'))
 
   const cache = core.getBooleanInput('cache')
   const cacheLockfile = core.getBooleanInput('cache_lockfile')
   const restore = core.getBooleanInput('restore')
+
+  const uploadQmod = core.getBooleanInput('upload_qmod')
+  const uploadBinaries = core.getBooleanInput('upload_binaries')
+
+  const qpkgPath = stringOrUndefined(core.getInput('qpkg_path'))
 
   // This should be a token with access to your repository scoped in as a secret.
   // The YML workflow will need to set myToken with the GitHub Secret Token
@@ -59,16 +73,16 @@ export function getActionParameters() {
   const myToken = core.getInput('workflow_token')
 
   return {
-    qpmDebugBin,
-    qpmReleaseBin,
-    qpmQmod,
     qpmVersion,
     packagePath,
+    tag,
+    uploadBinaries,
+    uploadQmod,
+    qpkgPath,
     token: myToken,
     publish,
     version,
     resolveNdk,
-    tag,
     cache,
     cacheLockfile,
     restore,
