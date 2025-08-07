@@ -7,13 +7,13 @@
 Usage:
 
 ```yaml
-- name: QPM Rust Action
-  uses: Fernthedev/qpm-action@v1
+- name: QPM Action
+  uses: Fernthedev/qpm-action@v2
   with:
     #required
     workflow_token: ${{secrets.GITHUB_TOKEN}}
 
-    qpm_version: 'version@^1.0.0' # Will download the newest qpm version which satisfies the range. By default, if empty, will download the latest release. use ref@main to download a workflow artifact from a branch or commit.
+    qpm_version: 'version@^2.0.0' # Will download the newest qpm version which satisfies the range. By default, if empty, will download the latest release. use ref@main to download a workflow artifact from a branch or commit.
 
     restore: true # Run restore on download
     cache: true # Cache dependencies and any resolved ndk downloads
