@@ -337,7 +337,7 @@ export async function run(): Promise<void> {
 
       qpm.info.version = version
 
-      writeQPM(qpmFilePath, qpm)
+      await writeQPM(qpmFilePath, qpm)
     }
 
     if (restore) {
@@ -351,7 +351,7 @@ export async function run(): Promise<void> {
     }
 
     if (parameters.publish === PublishMode.now) {
-      publishRun(parameters)
+      await publishRun(parameters)
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
