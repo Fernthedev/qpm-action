@@ -13,8 +13,7 @@ import {
   QPM_COMMAND_RESTORE,
   QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
-  QPM_REPOSITORY_OWNER,
-  QPM_REPOSITORY_WORKFLOW_NAME
+  QPM_REPOSITORY_OWNER
 } from './constants.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
@@ -184,7 +183,7 @@ async function downloadQpmVersion(
       core.error(`Unable to find valid qpm version for ${versionReq}`)
     }
 
-    qpmTargetReleaseTag = targetQpmRelease?.tag_name!
+    qpmTargetReleaseTag = targetQpmRelease!.tag_name
   }
 
   core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`)
@@ -337,7 +336,7 @@ export async function run(): Promise<void> {
 
       qpm.info.version = version
 
-      writeQPM(qpmFilePath, qpm)
+      await writeQPM(qpmFilePath, qpm)
     }
 
     if (restore) {
@@ -351,10 +350,9 @@ export async function run(): Promise<void> {
     }
 
     if (parameters.publish === PublishMode.now) {
-      publishRun(parameters)
+      await publishRun(parameters)
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)
-    core.isDebug
   }
 }

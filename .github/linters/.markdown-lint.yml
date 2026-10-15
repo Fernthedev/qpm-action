@@ -16,3 +16,12 @@ MD030:
 # Code block style
 MD046:
   style: fenced
+
+MD013:
+  line_length: 120
+  code_blocks: false
+
+MD033:
+  allowed_elements: [p, a, img]
+
+MD041: false
