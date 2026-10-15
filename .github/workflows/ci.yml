@@ -56,3 +56,4 @@ jobs:
           workflow_token: ${{secrets.GITHUB_TOKEN}}
           restore: false
           cache: false
+          resolve_ndk: false

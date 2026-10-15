@@ -1,76 +1,89 @@
-/**
- * Unit tests for the action's main functionality, src/main.ts
- *
- * These should be run as if the action was called from a workflow.
- * Specifically, the inputs listed in `action.yml` should be set as environment
- * variables following the pattern `INPUT_<INPUT_NAME>`.
- */
+import { expect, it, jest } from '@jest/globals'
+import path from 'node:path'
+import type { githubExecAsync } from '../src/utils.js'
 
-import * as core from '@actions/core'
-import * as main from '../src/main'
+const directory = path.resolve('qpm-tool')
+const setFailed = jest.fn()
+const exec = jest.fn<typeof githubExecAsync>().mockImplementation(async (_command, args) => ({
+  exitCode: 0,
+  stdout: args?.[0] === 'cache' ? `Config path is: ${directory}` : '',
+  stderr: ''
+}))
+const write = jest.fn<(file: string, qpm: { info: { version: string } }) => Promise<void>>()
+const publish = jest.fn<() => Promise<void>>()
 
-// Mock the action's main function
-const runMock = jest.spyOn(main, 'run')
+jest.unstable_mockModule('@actions/core', () => ({
+  setFailed,
+  info: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+  addPath: jest.fn()
+}))
+jest.unstable_mockModule('@actions/github', () => ({
+  getOctokit: () => ({ rest: { repos: { getLatestRelease: async () => ({ data: { tag_name: 'v1.5.9' } }) } } })
+}))
+jest.unstable_mockModule('@actions/tool-cache', () => ({ find: () => directory }))
+jest.unstable_mockModule('@actions/cache', () => ({ restoreCache: jest.fn(), saveCache: jest.fn() }))
+jest.unstable_mockModule('fs', () => ({ existsSync: (file: string) => file === directory }))
+jest.unstable_mockModule('../src/utils.js', () => ({
+  getActionParameters: () => ({
+    token: 'test-token',
+    packagePath: 'package',
+    version: '1.0.1',
+    restore: true,
+    cache: false,
+    resolveNdk: false,
+    publish: 'now'
+  }),
+  githubExecAsync: exec,
+  PublishMode: { now: 'now', late: 'late' }
+}))
+jest.unstable_mockModule('../src/qpm_file.js', () => ({
+  readQPM: async () => ({ info: { version: '1.0.0' } }),
+  writeQPM: write
+}))
+jest.unstable_mockModule('../src/publish.js', () => ({ publishRun: publish }))
+const { run } = await import('../src/main.js')
 
-// Other utilities
-const timeRegex = /^\d{2}:\d{2}:\d{2}/
-
-// Mock the GitHub Actions core library
-let debugMock: jest.SpyInstance
-let errorMock: jest.SpyInstance
-let getInputMock: jest.SpyInstance
-let setFailedMock: jest.SpyInstance
-let setOutputMock: jest.SpyInstance
-
-describe('action', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
-
-    debugMock = jest.spyOn(core, 'debug').mockImplementation()
-    errorMock = jest.spyOn(core, 'error').mockImplementation()
-    getInputMock = jest.spyOn(core, 'getInput').mockImplementation()
-    setFailedMock = jest.spyOn(core, 'setFailed').mockImplementation()
-    setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation()
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(yes => {
+    resolve = yes
   })
+  return { promise, resolve }
+}
 
-  it('sets the time output', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation((name: string): string => {
-      switch (name) {
-        case 'milliseconds':
-          return '500'
-        default:
-          return ''
-      }
-    })
-
-    await main.run()
-    expect(runMock).toHaveReturned()
-
-    // Verify that all of the core library functions were called correctly
-    expect(debugMock).toHaveBeenNthCalledWith(1, 'Waiting 500 milliseconds ...')
-    expect(debugMock).toHaveBeenNthCalledWith(2, expect.stringMatching(timeRegex))
-    expect(debugMock).toHaveBeenNthCalledWith(3, expect.stringMatching(timeRegex))
-    expect(setOutputMock).toHaveBeenNthCalledWith(1, 'time', expect.stringMatching(timeRegex))
-    expect(errorMock).not.toHaveBeenCalled()
+it('waits for the version write before restore and for immediate publishing before completing', async () => {
+  const writeStarted = deferred()
+  const writePending = deferred()
+  const publishStarted = deferred()
+  const publishPending = deferred()
+  write.mockImplementation(() => {
+    writeStarted.resolve()
+    return writePending.promise
   })
-
-  it('sets a failed status', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation((name: string): string => {
-      switch (name) {
-        case 'milliseconds':
-          return 'this is not a number'
-        default:
-          return ''
-      }
-    })
-
-    await main.run()
-    expect(runMock).toHaveReturned()
-
-    // Verify that all of the core library functions were called correctly
-    expect(setFailedMock).toHaveBeenNthCalledWith(1, 'milliseconds not a number')
-    expect(errorMock).not.toHaveBeenCalled()
+  publish.mockImplementation(() => {
+    publishStarted.resolve()
+    return publishPending.promise
   })
+  let completed = false
+  const execution = run().then(() => {
+    completed = true
+  })
+  try {
+    await writeStarted.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(exec.mock.calls.filter(([, args]) => args?.[0] === 'restore')).toHaveLength(0)
+    writePending.resolve()
+    await publishStarted.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(completed).toBe(false)
+  } finally {
+    writePending.resolve()
+    publishPending.resolve()
+    await execution
+  }
+  expect(write).toHaveBeenCalledWith(path.join('package', 'qpm.json'), { info: { version: '1.0.1' } })
+  expect(exec).toHaveBeenCalledWith(path.join(directory, 'qpm'), ['restore'], { cwd: 'package' })
+  expect(setFailed).not.toHaveBeenCalled()
 })

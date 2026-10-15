@@ -57256,7 +57256,6 @@ __nccwpck_require__.a(module, async (__webpack_handle_async_dependencies__, __we
  * The entrypoint for the action.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 await (0,_main_js__WEBPACK_IMPORTED_MODULE_0__/* .run */ .e)();
 
 __webpack_async_result__();
@@ -57692,7 +57691,7 @@ async function downloadQpmVersion(octokit, token, versionReq) {
         if (targetQpmRelease === undefined) {
             core.error(`Unable to find valid qpm version for ${versionReq}`);
         }
-        qpmTargetReleaseTag = targetQpmRelease?.tag_name;
+        qpmTargetReleaseTag = targetQpmRelease.tag_name;
     }
     core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`);
     // Check if QPM is already in the cache
@@ -57826,7 +57825,6 @@ async function run() {
     catch (error) {
         if (error instanceof Error)
             core.setFailed(error.message);
-        core.isDebug;
     }
 }
 
