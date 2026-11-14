@@ -40,6 +40,8 @@ export async function getOrMakeRelease(octokit: InstanceType<typeof GitHub>, rel
 
   const release = await octokit.rest.repos.createRelease({
     tag_name: releaseTag,
+    // tag the commit being built rather than the default branch head
+    target_commitish: github.context.sha,
     ...github.context.repo
   })
 

@@ -4,7 +4,9 @@ author: 'Fernthedev'
 inputs:
   package_path:
     required: false
-    description: 'Specifies the path to the qpm package'
+    description:
+      'Specifies the path to the directory containing qpm2.json, relative to the repository root. Use a subdirectory for
+      packages inside a monorepo'
     default: '.'
 
   publish:
@@ -25,7 +27,9 @@ inputs:
 
   qpkg_path:
     required: false
-    description: 'Specifies the path to the qpkg file. If not specified, it will be created for publishing'
+    description:
+      'Specifies the path to the qpkg file, relative to package_path. If the file does not exist, it will be built with
+      qpm2 qpkg when publishing. Defaults to {id}.qpkg'
     default: ''
 
   # triplet:
@@ -41,15 +45,19 @@ inputs:
 
   resolve_ndk:
     required: false
-    description: 'Should NDK be downloaded on restore'
-    default: 'false'
+    description:
+      'Should NDK be downloaded on restore. Will do nothing if no NDK is specified in qpm2.json. Will recycle existing
+      NDK if present'
+    default: 'true'
 
   version:
     required: false
     description: 'Specifies version to publish. Requires publish'
   tag:
     required: false
-    description: 'Specifies tag to use for github release. Defaults to version'
+    description:
+      'Specifies tag to use for github release. Defaults to version, or {id}-v{version} when package_path is a
+      subdirectory'
 
   restore:
     required: false
@@ -62,9 +70,8 @@ inputs:
     default: 'true'
   cache_lockfile:
     required: false
-    description: 'Specifies if the action should use caches with qpm.shared.json'
+    description: 'Specifies if the action should use caches with qpm2.shared.json'
     default: 'true'
-
 
   workflow_token:
     required: false

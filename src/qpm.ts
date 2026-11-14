@@ -17,45 +17,6 @@ import { GitHub } from '@actions/github/lib/utils.js'
 import semver from 'semver'
 import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME } from './api.js'
 
-export type TripletId = string | 'default'
-
-export interface QPMSharedPackage {
-  config: QPMPackage
-}
-
-export interface QPackage {
-  config: QPMPackage
-  qpkgUrl: string
-
-  qpkgChecksum?: string
-}
-
-export interface QPMPackage {
-  version: string
-  id: string
-  workspace?: {}
-  triplets: Record<
-    TripletId,
-    {
-      outBinaries?: string[]
-      qmodOutput?: string
-      qmodUrl?: string
-
-      ndk?: string
-      qmod?: string
-    }
-  >
-}
-
-export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {
-  return JSON.parse((await fs.readFile(file, undefined)).toString())
-}
-
-export async function writeQPM(file: fsOld.PathLike, qpm: QPMPackage | QPMSharedPackage): Promise<void> {
-  const qpmStr = JSON.stringify(qpm)
-  await fs.writeFile(file, qpmStr)
-}
-
 type WorkflowRun = {
   /** @example 10 */
   id?: number
@@ -80,12 +41,12 @@ function lookForLatestBranch(e: WorkflowRun) {
  * Return the path if QPM exists, otherwise return undefined
  **/
 async function checkIfQpmExists(version: string) {
-  const cachedPath = tc.find('qpm2', version)
+  const cachedPath = tc.find(QPM_EXECUTABLE_NAME, version)
 
-  if (fsOld.existsSync(cachedPath)) {
+  if (cachedPath && fsOld.existsSync(cachedPath)) {
     core.debug('Using existing qpm tool cached')
     core.addPath(cachedPath)
-    return path.join(cachedPath, 'qpm2')
+    return path.join(cachedPath, QPM_EXECUTABLE_NAME)
   }
 
   return undefined
@@ -136,6 +97,9 @@ export async function downloadQpmBleeding(
 
   core.debug(`Found ${workflowRunsResult.data.total_count} workflows`)
 
+  // Choose the matching workflow run based on the provided ref or the latest branch
+  const matchCheck = ref !== undefined ? (e: WorkflowRun) => lookForRef(e, ref) : lookForLatestBranch
+
   const workflowRuns = workflowRunsResult.data.workflow_runs
     .filter(e => matchCheck(e))
     .sort((a, b) => a.run_number - b.run_number)
@@ -149,9 +113,6 @@ export async function downloadQpmBleeding(
     repo: QPM_REPOSITORY_NAME,
     run_id: workflowId.id
   })
-
-  // Choose the matching workflow run based on the provided ref or the latest branch
-  const matchCheck = ref !== undefined ? (e: WorkflowRun) => lookForRef(e, ref) : lookForLatestBranch
 
   // Find the QPM artifact in the list
   const artifact = listedArtifacts.data.artifacts.find(
@@ -169,7 +130,7 @@ export async function downloadQpmBleeding(
 
   const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
   const qpmToolExtract = await tc.extractZip(qpmTool)
-  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetVersion)
+  cachedPath = await tc.cacheDir(qpmToolExtract, QPM_EXECUTABLE_NAME, QPM_EXECUTABLE_NAME, qpmTargetVersion)
 
   // Add the QPM path to the system path
   core.addPath(cachedPath)
@@ -184,7 +145,7 @@ export async function downloadQpmBleeding(
   })
 
   // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, 'qpm')
+  const execFile = path.join(cachedPath, QPM_EXECUTABLE_NAME)
   await fixupQpm(execFile)
 
   return execFile
@@ -213,7 +174,10 @@ export async function downloadQpmVersion(
       repo: QPM_REPOSITORY_NAME
     })
     qpmReleases.data.sort((a, b) => a.tag_name.localeCompare(b.tag_name)).reverse()
-    const targetQpmRelease = qpmReleases.data.find(x => semver.satisfies(semver.coerce(x.tag_name)!, versionReq))
+    const targetQpmRelease = qpmReleases.data.find(x => {
+      const v = semver.coerce(x.tag_name)
+      return v !== null && semver.satisfies(v, versionReq)
+    })
     if (targetQpmRelease === undefined) {
       core.error(`Unable to find valid qpm version for ${versionReq}`)
     }
@@ -258,7 +222,7 @@ export async function downloadQpmVersion(
   const qpmToolExtract = await tc.extractZip(qpmTool)
 
   core.info(`Extracted to ${qpmToolExtract}, adding to cache`)
-  cachedPath = await tc.cacheDir(qpmToolExtract, 'qpm', 'qpm', qpmTargetReleaseTag)
+  cachedPath = await tc.cacheDir(qpmToolExtract, QPM_EXECUTABLE_NAME, QPM_EXECUTABLE_NAME, qpmTargetReleaseTag)
 
   // Add the QPM path to the system path
   core.addPath(cachedPath)
