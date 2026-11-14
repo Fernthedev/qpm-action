@@ -1,76 +1,62 @@
-/**
- * Unit tests for the action's main functionality, src/main.ts
- *
- * These should be run as if the action was called from a workflow.
- * Specifically, the inputs listed in `action.yml` should be set as environment
- * variables following the pattern `INPUT_<INPUT_NAME>`.
- */
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
+import { mockCore, mockExec } from './helpers/mocks.js'
 
-import * as core from '@actions/core'
-import * as main from '../src/main'
+mockCore()
+const exec = mockExec()
+const cache = {
+  restoreCache: jest.fn(async (): Promise<string | undefined> => undefined),
+  saveCache: jest.fn(async () => 1)
+}
+jest.unstable_mockModule('@actions/cache', () => cache)
 
-// Mock the action's main function
-const runMock = jest.spyOn(main, 'run')
+const { resolveNDK } = await import('../src/main.js')
 
-// Other utilities
-const timeRegex = /^\d{2}:\d{2}:\d{2}/
+let dir: string
 
-// Mock the GitHub Actions core library
-let debugMock: jest.SpyInstance
-let errorMock: jest.SpyInstance
-let getInputMock: jest.SpyInstance
-let setFailedMock: jest.SpyInstance
-let setOutputMock: jest.SpyInstance
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qpm-ndk-'))
+  exec.calls.length = 0
+})
 
-describe('action', () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
+afterEach(() => {
+  fs.rmSync(dir, { recursive: true, force: true })
+})
 
-    debugMock = jest.spyOn(core, 'debug').mockImplementation()
-    errorMock = jest.spyOn(core, 'error').mockImplementation()
-    getInputMock = jest.spyOn(core, 'getInput').mockImplementation()
-    setFailedMock = jest.spyOn(core, 'setFailed').mockImplementation()
-    setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation()
+function writePackage(workspace: Record<string, unknown>): string {
+  const file = path.join(dir, 'qpm2.json')
+  fs.writeFileSync(file, JSON.stringify({ id: 'x', version: '1.0.0', workspace }))
+  return file
+}
+
+describe('resolveNDK', () => {
+  it('skips packages without an NDK requirement', async () => {
+    await resolveNDK('qpm2', writePackage({}), '/ndk', true, dir)
+
+    expect(exec.calls).toEqual([])
+    expect(cache.restoreCache).not.toHaveBeenCalled()
   })
 
-  it('sets the time output', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation((name: string): string => {
-      switch (name) {
-        case 'milliseconds':
-          return '500'
-        default:
-          return ''
-      }
-    })
+  it('downloads the NDK in the package directory and caches it', async () => {
+    await resolveNDK('qpm2', writePackage({ ndk: '^27.2.0' }), '/ndk', true, dir)
 
-    await main.run()
-    expect(runMock).toHaveReturned()
-
-    // Verify that all of the core library functions were called correctly
-    expect(debugMock).toHaveBeenNthCalledWith(1, 'Waiting 500 milliseconds ...')
-    expect(debugMock).toHaveBeenNthCalledWith(2, expect.stringMatching(timeRegex))
-    expect(debugMock).toHaveBeenNthCalledWith(3, expect.stringMatching(timeRegex))
-    expect(setOutputMock).toHaveBeenNthCalledWith(1, 'time', expect.stringMatching(timeRegex))
-    expect(errorMock).not.toHaveBeenCalled()
+    expect(exec.calls).toEqual([{ command: 'qpm2', args: ['ndk', 'resolve', '-d'], cwd: dir }])
+    expect(cache.restoreCache).toHaveBeenCalledWith(['/ndk'], 'qpm-ndk-^27.2.0', ['qpm-ndk-'])
+    expect(cache.saveCache).toHaveBeenCalledWith(['/ndk'], 'qpm-ndk-^27.2.0')
   })
 
-  it('sets a failed status', async () => {
-    // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation((name: string): string => {
-      switch (name) {
-        case 'milliseconds':
-          return 'this is not a number'
-        default:
-          return ''
-      }
-    })
+  it('does not save the cache on a hit', async () => {
+    cache.restoreCache.mockResolvedValueOnce('qpm-ndk-^27.2.0')
+    await resolveNDK('qpm2', writePackage({ ndk: '^27.2.0' }), '/ndk', true, dir)
 
-    await main.run()
-    expect(runMock).toHaveReturned()
+    expect(cache.saveCache).not.toHaveBeenCalled()
+  })
 
-    // Verify that all of the core library functions were called correctly
-    expect(setFailedMock).toHaveBeenNthCalledWith(1, 'milliseconds not a number')
-    expect(errorMock).not.toHaveBeenCalled()
+  it('makes NDK ranges valid cache keys', async () => {
+    await resolveNDK('qpm2', writePackage({ ndk: '>=27, <28' }), '/ndk', true, dir)
+
+    expect(cache.saveCache).toHaveBeenCalledWith(['/ndk'], 'qpm-ndk->=27_ <28')
   })
 })

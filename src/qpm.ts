@@ -1,50 +1,70 @@
 import * as fs from 'fs/promises'
-import * as fsOld from 'fs'
+import * as fsSync from 'fs'
 
 import * as core from '@actions/core'
-import * as github from '@actions/github'
 import * as tc from '@actions/tool-cache'
-import * as cache from '@actions/cache'
 import * as path from 'path'
 import {
+  QPM_BLEEDING_TAG,
+  QPM_DEFAULT_VERSION_RANGE,
   QPM_REPOSITORY_BRANCH,
   QPM_REPOSITORY_NAME,
   QPM_REPOSITORY_OWNER,
-  QPM_REPOSITORY_WORKFLOW_NAME
+  QPM_REPOSITORY_WORKFLOW_FILE
 } from './constants.js'
 import { githubExecAsync } from './utils.js'
 import { GitHub } from '@actions/github/lib/utils.js'
 import semver from 'semver'
 import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME } from './api.js'
 
-type WorkflowRun = {
-  /** @example 10 */
-  id?: number
-  /** @example 42 */
-  repository_id?: number
-  /** @example 42 */
-  head_repository_id?: number
-  /** @example main */
+const QPM_REPO = { owner: QPM_REPOSITORY_OWNER, repo: QPM_REPOSITORY_NAME }
+
+export interface ReleaseLike {
+  id: number
+  tag_name: string
+  draft?: boolean
+}
+
+export interface WorkflowRunLike {
+  id: number
   head_branch?: string | null
-  /** @example 009b8a3a9ccbb128af87f9b1c0f4c62e8a304f6d */
   head_sha?: string
 }
 
-function lookForRef(e: WorkflowRun, ref: string) {
-  return e?.head_sha?.startsWith(ref) || e?.head_branch === ref
-}
-function lookForLatestBranch(e: WorkflowRun) {
-  return e?.head_branch === QPM_REPOSITORY_BRANCH
+/** Parse a release tag such as `v2.1.0` into a version. Non-version tags (`bleeding2`) give null */
+export function parseReleaseTag(tag: string): semver.SemVer | null {
+  return semver.parse(tag.replace(/^v/, ''))
 }
 
-/** Check if the QPM version already exists in the cache
- * Return the path if QPM exists, otherwise return undefined
- **/
-async function checkIfQpmExists(version: string) {
+/** The highest non-draft release whose tag satisfies the range */
+export function selectQpmRelease<T extends ReleaseLike>(releases: T[], range: semver.Range): T | undefined {
+  return releases
+    .filter(r => !r.draft)
+    .map(r => ({ release: r, version: parseReleaseTag(r.tag_name) }))
+    .filter((r): r is { release: T; version: semver.SemVer } => r.version !== null && range.test(r.version))
+    .sort((a, b) => semver.rcompare(a.version, b.version))[0]?.release
+}
+
+/**
+ * Version to store a bleeding build under in the tool cache.
+ * tool-cache only finds explicit semver versions, so the build id is a prerelease identifier
+ */
+export function bleedingCacheVersion(buildId: string | number): string {
+  return `0.0.0-bleeding.g${buildId}`
+}
+
+/** The newest successful run matching the ref (branch or commit sha prefix), or of main if no ref */
+export function selectWorkflowRun<T extends WorkflowRunLike>(runs: T[], ref: string | undefined): T | undefined {
+  const target = ref ?? QPM_REPOSITORY_BRANCH
+  return runs.find(r => r.head_branch === target || (ref !== undefined && r.head_sha?.startsWith(ref)))
+}
+
+/** Return the path to the QPM executable if this version is already in the tool cache */
+function findCachedQpm(version: string): string | undefined {
   const cachedPath = tc.find(QPM_EXECUTABLE_NAME, version)
 
-  if (cachedPath && fsOld.existsSync(cachedPath)) {
-    core.debug('Using existing qpm tool cached')
+  if (cachedPath && fsSync.existsSync(cachedPath)) {
+    core.info(`Using cached ${QPM_EXECUTABLE_NAME} ${version}`)
     core.addPath(cachedPath)
     return path.join(cachedPath, QPM_EXECUTABLE_NAME)
   }
@@ -52,193 +72,105 @@ async function checkIfQpmExists(version: string) {
   return undefined
 }
 
-async function fixupQpm(execFile: string) {
-  const parent = path.dirname(execFile)
-  await githubExecAsync(`chmod +x ${execFile}`)
-  // await githubExecAsync(`ln ${execFile} ${path.join(parent, 'qpm-rust')}`)
+/** Download a zip containing the QPM executable, add it to the tool cache and PATH */
+async function installQpmZip(url: string, token: string, cacheVersion: string): Promise<string> {
+  core.info(`Downloading ${QPM_EXECUTABLE_NAME} from ${url}`)
+  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
+  const qpmToolExtract = await tc.extractZip(qpmTool)
+
+  const cachedPath = await tc.cacheDir(qpmToolExtract, QPM_EXECUTABLE_NAME, cacheVersion)
+  core.addPath(cachedPath)
+  core.info(`Added ${cachedPath} to path`)
+
+  await core.group('cache files', async () => {
+    for (const file of await fs.readdir(cachedPath)) {
+      core.info(`${file} ${(await fs.stat(path.join(cachedPath, file))).isFile()}`)
+    }
+  })
+
+  const execFile = path.join(cachedPath, process.platform === 'win32' ? `${QPM_EXECUTABLE_NAME}.exe` : QPM_EXECUTABLE_NAME)
+  if (process.platform !== 'win32') {
+    await githubExecAsync('chmod', ['+x', execFile])
+  }
+  return execFile
 }
 
-// Function to download QPM
+/** Download QPM from a workflow artifact of QPM.CLI, for `ref@` */
 export async function downloadQpmBleeding(
   octokit: InstanceType<typeof GitHub>,
   token: string,
   ref: string | undefined
 ): Promise<string | undefined> {
-  // Get the branch information for QPM repository
-  const qpmBranch = await octokit.rest.repos.getBranch({
-    branch: QPM_REPOSITORY_BRANCH,
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME
-  })
-
-  // Determine the target version based on the provided ref or use the latest commit SHA
-  const qpmTargetVersion = ref ?? qpmBranch.data.commit.sha
-  core.debug(`Looking for qpm in cache version ${qpmTargetVersion}`)
-
-  // Check if QPM is already in the cache
-  let cachedPath = await checkIfQpmExists(qpmTargetVersion)
-  if (cachedPath) {
-    return cachedPath
-  }
-
-  // Get the expected artifact name for QPM
-  const expectedArtifactName = getQPM_ArtifactExecutableName()
-  core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
-
-  // List artifacts for the QPM repository
-  const workflowRunsResult = await octokit.rest.actions.listWorkflowRunsForRepo({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
+  const runs = await octokit.rest.actions.listWorkflowRuns({
+    ...QPM_REPO,
+    workflow_id: QPM_REPOSITORY_WORKFLOW_FILE,
     status: 'success',
     exclude_pull_requests: true,
-
-    branch: QPM_REPOSITORY_BRANCH
+    // a sha ref can't be filtered by branch
+    branch: ref === undefined ? QPM_REPOSITORY_BRANCH : undefined,
+    per_page: 100
   })
 
-  core.debug(`Found ${workflowRunsResult.data.total_count} workflows`)
-
-  // Choose the matching workflow run based on the provided ref or the latest branch
-  const matchCheck = ref !== undefined ? (e: WorkflowRun) => lookForRef(e, ref) : lookForLatestBranch
-
-  const workflowRuns = workflowRunsResult.data.workflow_runs
-    .filter(e => matchCheck(e))
-    .sort((a, b) => a.run_number - b.run_number)
-
-  // get latest workflow
-  const workflowId = workflowRuns[workflowRuns.length - 1]
-
-  core.debug(`Looking for workflow artifacts`)
-  const listedArtifacts = await octokit.rest.actions.listWorkflowRunArtifacts({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    run_id: workflowId.id
-  })
-
-  // Find the QPM artifact in the list
-  const artifact = listedArtifacts.data.artifacts.find(
-    e => e.name === expectedArtifactName && e.workflow_run && matchCheck(e.workflow_run)
-  )
-
-  // Handle the case when no artifact is found
-  if (!artifact) {
-    core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${QPM_REPOSITORY_BRANCH}`)
+  const run = selectWorkflowRun(runs.data.workflow_runs, ref)
+  if (!run) {
+    core.error(`No successful ${QPM_REPOSITORY_WORKFLOW_FILE} run found for ${ref ?? QPM_REPOSITORY_BRANCH}`)
+    return undefined
   }
 
-  // Download the QPM artifact
-  const url = artifact!.archive_download_url
-  core.debug(`Downloading from ${url}`)
+  const cacheVersion = bleedingCacheVersion(run.head_sha)
+  const cached = findCachedQpm(cacheVersion)
+  if (cached) return cached
 
-  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
-  const qpmToolExtract = await tc.extractZip(qpmTool)
-  cachedPath = await tc.cacheDir(qpmToolExtract, QPM_EXECUTABLE_NAME, QPM_EXECUTABLE_NAME, qpmTargetVersion)
+  const expectedArtifactName = getQPM_ArtifactExecutableName()
+  const artifacts = await octokit.rest.actions.listWorkflowRunArtifacts({ ...QPM_REPO, run_id: run.id })
+  const artifact = artifacts.data.artifacts.find(a => a.name === expectedArtifactName)
 
-  // Add the QPM path to the system path
-  core.addPath(cachedPath)
-  core.debug(`Added ${cachedPath} to path`)
+  if (!artifact) {
+    core.error(`No artifact ${expectedArtifactName} found in run ${run.id} (${run.head_sha})`)
+    return undefined
+  }
 
-  // Display information about cached files
-  await core.group('cache files', async () => {
-    for (const file of await fs.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fs.stat(path.join(cachedPath!, file))).isFile()}`)
-    }
-    return Promise.resolve()
-  })
-
-  // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, QPM_EXECUTABLE_NAME)
-  await fixupQpm(execFile)
-
-  return execFile
+  return installQpmZip(artifact.archive_download_url, token, cacheVersion)
 }
 
+/**
+ * Download the newest QPM release satisfying the range.
+ * Until a release satisfies it, the bleeding pre-release is used instead
+ */
 export async function downloadQpmVersion(
   octokit: InstanceType<typeof GitHub>,
   token: string,
-  versionReq: semver.Range | undefined
+  versionReq: semver.Range = new semver.Range(QPM_DEFAULT_VERSION_RANGE)
 ): Promise<string | undefined> {
-  // Determine the target version based on the provided ref or use the latest release
-  let qpmTargetReleaseTag: string
-  if (versionReq === undefined) {
-    // Get the branch information for QPM repository
-    const qpmRelease = await octokit.rest.repos.getLatestRelease({
-      branch: QPM_REPOSITORY_BRANCH,
-      owner: QPM_REPOSITORY_OWNER,
-      repo: QPM_REPOSITORY_NAME
-    })
-    qpmTargetReleaseTag = qpmRelease.data.tag_name
+  const releases = await octokit.paginate(octokit.rest.repos.listReleases, { ...QPM_REPO, per_page: 100 })
+
+  let release = selectQpmRelease(releases, versionReq)
+  let cacheVersion: string
+
+  if (release) {
+    cacheVersion = parseReleaseTag(release.tag_name)!.version
   } else {
-    // Get the branch information for QPM repository
-    const qpmReleases = await octokit.rest.repos.listReleases({
-      branch: QPM_REPOSITORY_BRANCH,
-      owner: QPM_REPOSITORY_OWNER,
-      repo: QPM_REPOSITORY_NAME
-    })
-    qpmReleases.data.sort((a, b) => a.tag_name.localeCompare(b.tag_name)).reverse()
-    const targetQpmRelease = qpmReleases.data.find(x => {
-      const v = semver.coerce(x.tag_name)
-      return v !== null && semver.satisfies(v, versionReq)
-    })
-    if (targetQpmRelease === undefined) {
-      core.error(`Unable to find valid qpm version for ${versionReq}`)
+    core.warning(`No QPM release satisfies ${versionReq.raw}, falling back to ${QPM_BLEEDING_TAG}`)
+    release = releases.find(r => r.tag_name === QPM_BLEEDING_TAG)
+    if (!release) {
+      core.error(`Unable to find a QPM release for ${versionReq.raw} or ${QPM_BLEEDING_TAG}`)
+      return undefined
     }
-
-    qpmTargetReleaseTag = targetQpmRelease?.tag_name!
+    // the bleeding release is recreated for every build, so its id identifies the build
+    cacheVersion = bleedingCacheVersion(release.id)
   }
 
-  core.debug(`Looking for qpm in cache version ${qpmTargetReleaseTag}`)
+  core.info(`Using QPM ${release.tag_name}`)
 
-  // Check if QPM is already in the cache
-  let cachedPath = await checkIfQpmExists(qpmTargetReleaseTag)
-  if (cachedPath) {
-    return cachedPath
+  const cached = findCachedQpm(cacheVersion)
+  if (cached) return cached
+
+  const expectedAssetName = getQPM_ReleaseExecutableName()
+  const asset = release.assets.find(a => a.name === expectedAssetName)
+  if (!asset) {
+    core.error(`No asset ${expectedAssetName} found in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${release.tag_name}`)
+    return undefined
   }
 
-  // Get the expected artifact name for QPM
-  const expectedArtifactName = getQPM_ReleaseExecutableName()
-  core.debug(`Looking for ${expectedArtifactName} in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}`)
-
-  // List artifacts for the QPM repository
-  const qpmRelease = await octokit.rest.repos.getReleaseByTag({
-    owner: QPM_REPOSITORY_OWNER,
-    repo: QPM_REPOSITORY_NAME,
-    tag: qpmTargetReleaseTag
-  })
-
-  // Find the QPM artifact in the list
-  const artifact = qpmRelease.data.assets.find(a => a.name === expectedArtifactName)
-
-  // Handle the case when no artifact is found
-  if (!artifact) {
-    core.error(`No artifact found for ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${qpmTargetReleaseTag}`)
-  }
-
-  // Download the QPM artifact
-  const url = artifact!.browser_download_url
-  core.info(`Downloading from ${url}`)
-
-  const qpmTool = await tc.downloadTool(url, undefined, `Bearer ${token}`)
-  core.info(`Downloaded to ${qpmTool}, extracting`)
-
-  const qpmToolExtract = await tc.extractZip(qpmTool)
-
-  core.info(`Extracted to ${qpmToolExtract}, adding to cache`)
-  cachedPath = await tc.cacheDir(qpmToolExtract, QPM_EXECUTABLE_NAME, QPM_EXECUTABLE_NAME, qpmTargetReleaseTag)
-
-  // Add the QPM path to the system path
-  core.addPath(cachedPath)
-  core.info(`Added ${cachedPath} to path`)
-
-  // Display information about cached files
-  await core.group('cache files', async () => {
-    for (const file of await fs.readdir(cachedPath!)) {
-      core.debug(`${file} ${(await fs.stat(path.join(cachedPath!, file))).isFile()}`)
-    }
-    return Promise.resolve()
-  })
-
-  // Perform any necessary fix-ups for QPM
-  const execFile = path.join(cachedPath, QPM_EXECUTABLE_NAME)
-  await fixupQpm(execFile)
-
-  return execFile
+  return installQpmZip(asset.browser_download_url, token, cacheVersion)
 }

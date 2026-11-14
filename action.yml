@@ -32,15 +32,11 @@ inputs:
       qpm2 qpkg when publishing. Defaults to {id}.qpkg'
     default: ''
 
-  # triplet:
-  #   required: false
-  #   description: 'The triplet to use for restore and build'
-  #   default: ''
-
   qpm_version:
     required: false
     description:
-      'The version of QPM to download. Defaults to latest release. Use version@^1.0.0 for release or ref@main for main'
+      'The version of QPM to download. Use version@<range> for the newest release satisfying the range, falling back to
+      the bleeding2 pre-release until one exists, or ref@<branch|sha> for a QPM.CLI workflow artifact'
     default: 'version@^2.0.0'
 
   resolve_ndk:
@@ -56,8 +52,7 @@ inputs:
   tag:
     required: false
     description:
-      'Specifies tag to use for github release. Defaults to version, or {id}-v{version} when package_path is a
-      subdirectory'
+      'Specifies tag to use for github release. Defaults to version. Packages of a monorepo may share the same release'
 
   restore:
     required: false

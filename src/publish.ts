@@ -27,16 +27,15 @@ export function packageSubdirectory(packagePath: string | undefined): string {
 }
 
 /**
- * The Github release tag to publish to.
- * Packages in a subdirectory (monorepo) default to `{id}-v{version}` so packages don't share a release
+ * The Github release tag to publish to, defaulting to the package version.
+ * Packages of a monorepo may share a release, their assets are named after the package
  */
-export function releaseTag(qpm: QPMPackage, tag: string | undefined, packagePath: string | undefined): string {
-  if (tag) return tag
-  return packageSubdirectory(packagePath) === '' ? qpm.version : `${qpm.id}-v${qpm.version}`
+export function releaseTag(qpm: QPMPackage, tag: string | undefined): string {
+  return tag ?? qpm.version
 }
 
 /** Default qmod output of `qpm2 qmod zip`, relative to the package directory */
-function qmodPath(qpm: QPMPackage): string {
+export function qmodPath(qpm: QPMPackage): string {
   const out = qpm.qmod?.output ?? `./${qpm.qmod?.id ?? qpm.id}`
   // same as Rust's Path::with_extension("qmod")
   return `${out.slice(0, out.length - path.extname(out).length)}.qmod`
@@ -69,7 +68,7 @@ export async function preparePublish(params: ActionParameters): Promise<void> {
     const download = getReleaseDownloadLink(
       github.context.repo.owner,
       github.context.repo.repo,
-      releaseTag(qpm, tag, packagePath)
+      releaseTag(qpm, tag)
     )
     qpm.qmod ??= {}
     qpm.qmod.downloadUrl = `${download}/${encodeURIComponent(path.basename(qmodPath(qpm)))}`
@@ -79,7 +78,7 @@ export async function preparePublish(params: ActionParameters): Promise<void> {
   await writeQPM(qpmPath, qpm)
 }
 
-async function uploadReleaseAsset(
+export async function uploadReleaseAsset(
   octokit: InstanceType<typeof GitHub>,
   releaseId: number,
   filePath: string,
@@ -153,7 +152,7 @@ export async function publishRun(params: ActionParameters): Promise<void> {
     )
   }
 
-  const releaseId = await getOrMakeRelease(octokit, releaseTag(qpm, tag, packagePath))
+  const releaseId = await getOrMakeRelease(octokit, releaseTag(qpm, tag))
 
   if (uploadBinaries) {
     for (const file of qpm.workspace?.outBinaries ?? []) {

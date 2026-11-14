@@ -18,7 +18,7 @@ import semver from 'semver'
  * Resolve the NDK required by qpm2.json, downloading it if necessary.
  * Does nothing if no NDK is specified. An installed NDK satisfying the requirement is reused
  */
-async function resolveNDK(
+export async function resolveNDK(
   qpmBinaryPath: string,
   qpmFilePath: string,
   ndkPath: string,

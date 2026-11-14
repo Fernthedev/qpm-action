@@ -13,7 +13,7 @@ Usage:
     #required
     workflow_token: ${{secrets.GITHUB_TOKEN}}
 
-    qpm_version: 'version@^2.0.0' # Will download the newest qpm version which satisfies the range. By default, if empty, will download the latest release. use ref@main to download a workflow artifact from a branch or commit.
+    qpm_version: 'version@^2.0.0' # Will download the newest qpm release which satisfies the range (default ^2.0.0). Falls back to the bleeding2 pre-release until a satisfying release exists. Use ref@main to download a workflow artifact from a branch or commit.
 
     restore: true # Run restore on download
     cache: true # Cache dependencies and any resolved ndk downloads
@@ -22,7 +22,7 @@ Usage:
 
     publish_token: ${{secrets.QPM_TOKEN}} # Token required for authorization publish to qpackages.com
     version: '1.0.0' # Defaults to qpm version, do not include v
-    tag: 'v1.0.0' # Defaults to version ({id}-v{version} for subdirectory packages), this is the Github Release TAG, not version!
+    tag: 'v1.0.0' # Defaults to version, this is the Github Release TAG, not version! Monorepo packages may share it
 
     upload_qmod: true # When publishing, builds and uploads the qmod to the release and sets qmod.downloadUrl
 
@@ -46,8 +46,9 @@ QPM2 publishes a QPKG, no git branches or commits are created. When `publish` is
 
 ### Monorepos
 
-Set `package_path` to the package's subdirectory. Each package gets its own release tag (`{id}-v{version}`) by default
-and `additionalData.url` points to the package's directory in the repository.
+Set `package_path` to the package's subdirectory; every `qpm2` command runs there and `additionalData.url` points to the
+package's directory in the repository. Packages can share the same release tag: the QPKG, qmod and binaries uploaded as
+release assets are named after each package (`{id}.qpkg`, `{qmod id}.qmod`, binary file names), and an asset with the same name from a previous run is replaced.
 
 ```yaml
 - uses: Fernthedev/qpm-action@v2
@@ -56,4 +57,14 @@ and `additionalData.url` points to the package's directory in the repository.
     package_path: 'packages/my-lib'
     publish: 'late'
     publish_token: ${{secrets.QPM_TOKEN}}
+    tag: 'v1.0.0' # shared with the other packages of the repository
+```
+
+### Release permissions
+
+Publishing uploads to a Github release, so `workflow_token` needs `contents: write`:
+
+```yaml
+permissions:
+  contents: write
 ```
