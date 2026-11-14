@@ -15,22 +15,22 @@ inputs:
       'Denotes if this will publish to QPM qpackages.com. Possible values are: "late", "now" or undefined. Late publish
       will only run if action ran with success'
 
+  upload_release:
+    required: false
+    description:
+      'Denotes if the qpkg, qmod and binaries should be uploaded to the Github release when publishing. When false, they
+      are only built and qpm2 publish is skipped, since there is no qpkg url to publish'
+    default: 'true'
+
   upload_qmod:
     required: false
-    description: 'Denotes if the qmod should be uploaded to the release'
+    description: 'Denotes if the qmod should be built and uploaded to the release'
     default: 'true'
 
   upload_binaries:
     required: false
     description: 'Denotes if the binaries should be uploaded to the release'
     default: 'false'
-
-  qpkg_path:
-    required: false
-    description:
-      'Specifies the path to the qpkg file, relative to package_path. If the file does not exist, it will be built with
-      qpm2 qpkg when publishing. Defaults to {id}.qpkg'
-    default: ''
 
   qpm_version:
     required: false

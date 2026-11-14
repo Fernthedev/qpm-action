@@ -10,15 +10,23 @@ mockExec()
 
 const toolDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qpm-tool-'))
 const tc = {
-  find: jest.fn((_tool: string, _version: string) => ''),
-  downloadTool: jest.fn(async (_url: string) => path.join(toolDir, 'download.zip')),
-  extractZip: jest.fn(async (_file: string) => toolDir),
-  cacheDir: jest.fn(async (dir: string, _tool: string, _version: string) => dir)
+  find: jest.fn<(tool: string, version: string) => string>(() => ''),
+  downloadTool: jest.fn<(url: string, dest?: string, auth?: string) => Promise<string>>(async () =>
+    path.join(toolDir, 'download.zip')
+  ),
+  extractZip: jest.fn<(file: string) => Promise<string>>(async () => toolDir),
+  cacheDir: jest.fn<(dir: string, tool: string, version: string) => Promise<string>>(async dir => dir)
 }
 jest.unstable_mockModule('@actions/tool-cache', () => tc)
 
-const { bleedingCacheVersion, downloadQpmBleeding, downloadQpmVersion, parseReleaseTag, selectQpmRelease, selectWorkflowRun } =
-  await import('../src/qpm.js')
+const {
+  bleedingCacheVersion,
+  downloadQpmBleeding,
+  downloadQpmVersion,
+  parseReleaseTag,
+  selectQpmRelease,
+  selectWorkflowRun
+} = await import('../src/qpm.js')
 const { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName } = await import('../src/api.js')
 
 type Octokit = Parameters<typeof downloadQpmVersion>[0]

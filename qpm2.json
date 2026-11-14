@@ -1,29 +1,20 @@
 {
-  "$schema": "https://raw.githubusercontent.com/QuestPackageManager/QPM.Package/refs/heads/qpm2/qpm.schema.json",
+  "$schema": "https://raw.githubusercontent.com/QuestPackageManager/QPM.Package/refs/heads/main/qpm.schema.json",
+  "configVersion": "2.0.0",
   "id": "paper",
   "version": "0.1.0",
   "dependenciesDirectory": "extern",
   "sharedDirectory": "shared",
-  "workspace": {
-    "scripts": {}
-  },
   "additionalData": {
     "description": "",
     "author": "",
     "license": ""
   },
-  "triplets": {
-    "default": {
-      "outBinaries": [],
-      "qmodOutput": "",
-
-      "dependencies": {},
-      "devDependencies": {},
-      "env": {},
-      "qmodIncludeDirs": [],
-      "qmodIncludeFiles": []
-    }
+  "workspace": {
+    "scripts": {},
+    "outBinaries": [],
+    "toolchainOut": "toolchain.json"
   },
-  "configVersion": "2.0.0",
-  "toolchainOut": "toolchain.json"
+  "dependencies": {},
+  "devDependencies": {}
 }

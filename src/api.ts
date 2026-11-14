@@ -33,7 +33,7 @@ async function findReleaseId(octokit: InstanceType<typeof GitHub>, releaseTag: s
     })
     return release.data.id
   } catch (e) {
-    core.debug(`Fetching release ${releaseTag} failed: ${e}`)
+    core.debug(`Fetching release ${releaseTag} failed: ${String(e)}`)
     return undefined
   }
 }

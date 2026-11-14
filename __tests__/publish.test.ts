@@ -11,9 +11,7 @@ const { octokit, releases } = fakeOctokit()
 mockGithub(octokit)
 
 const { packageSubdirectory, preparePublish, publishRun, qmodPath, releaseTag } = await import('../src/publish.js')
-const { getActionParameters } = await import('../src/utils.js')
-
-type Params = ReturnType<typeof getActionParameters>
+type Params = import('../src/utils.js').ActionParameters
 
 let repoRoot: string
 
@@ -24,7 +22,7 @@ function params(overrides: Partial<Params> = {}): Params {
     tag: undefined,
     uploadBinaries: false,
     uploadQmod: false,
-    qpkgPath: undefined,
+    uploadRelease: true,
     token: 'gh-token',
     publish: undefined,
     version: undefined,
@@ -41,7 +39,13 @@ function writePackage(dir: string, qpm: Record<string, unknown>): void {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(
     path.join(dir, 'qpm2.json'),
-    JSON.stringify({ id: 'my-lib', version: '1.2.3', dependenciesDirectory: 'extern', sharedDirectory: 'shared', ...qpm })
+    JSON.stringify({
+      id: 'my-lib',
+      version: '1.2.3',
+      dependenciesDirectory: 'extern',
+      sharedDirectory: 'shared',
+      ...qpm
+    })
   )
 }
 
@@ -130,36 +134,39 @@ describe('preparePublish', () => {
     expect(qpm.workspace).toEqual({ ndk: '^27' })
   })
 
-  it('sets qmod.downloadUrl to the release asset when uploading the qmod', async () => {
-    writePackage(repoRoot, { qmod: { id: 'MyMod' } })
-    await preparePublish(params({ uploadQmod: true, tag: 'v1.2.3' }))
-
-    expect(readPackage(repoRoot).qmod.downloadUrl).toBe(
-      `https://github.com/${REPO.owner}/${REPO.repo}/releases/download/v1.2.3/MyMod.qmod`
-    )
-  })
-
-  it('leaves qmod untouched when not uploading the qmod', async () => {
+  it('does not guess qmod.downloadUrl before the qmod is uploaded', async () => {
     writePackage(repoRoot, {})
-    await preparePublish(params())
+    await preparePublish(params({ uploadQmod: true }))
 
     expect(readPackage(repoRoot).qmod).toBeUndefined()
   })
 })
 
 describe('publishRun', () => {
-  /** Emulates `qpm2 qpkg <out>` creating the file */
-  function emulateQpkg(): void {
+  const qpkgUrl = (tag: string, name: string): string =>
+    `https://github.com/${REPO.owner}/${REPO.repo}/releases/download/${tag}/${name}`
+
+  /** Emulates qpm2 creating the qmod and qpkg files. Records qpm2.json as seen by `qpm2 qpkg` */
+  let qpkgConfig: Record<string, any> | undefined
+  function emulateQpm(): void {
+    qpkgConfig = undefined
     onExec = call => {
-      if (call.command === 'qpm2' && call.args[0] === 'qpkg') {
+      if (call.command !== 'qpm2') return
+      if (call.args[0] === 'qpkg') {
+        qpkgConfig = readPackage(call.cwd!)
         fs.writeFileSync(path.join(call.cwd!, call.args[1]), 'qpkg')
+      }
+      if (call.args[0] === 'qmod' && call.args[1] === 'zip') {
+        const qpm = readPackage(call.cwd!)
+        fs.writeFileSync(path.join(call.cwd!, `${qpm.qmod?.output ?? qpm.id}.qmod`), 'qmod')
       }
     }
   }
 
+  beforeEach(emulateQpm)
+
   it('builds the qpkg, uploads it as a release asset and publishes its url', async () => {
     writePackage(repoRoot, {})
-    emulateQpkg()
 
     await publishRun(params())
 
@@ -167,14 +174,7 @@ describe('publishRun', () => {
       { command: 'qpm2', args: ['qpkg', 'my-lib.qpkg'], cwd: repoRoot },
       {
         command: 'qpm2',
-        args: [
-          'publish',
-          `https://github.com/${REPO.owner}/${REPO.repo}/releases/download/1.2.3/my-lib.qpkg`,
-          '--backend',
-          'qpackages',
-          '--token',
-          'qpm-token'
-        ],
+        args: ['publish', qpkgUrl('1.2.3', 'my-lib.qpkg'), '--backend', 'qpackages', '--token', 'qpm-token'],
         cwd: repoRoot
       }
     ])
@@ -184,48 +184,61 @@ describe('publishRun', () => {
     expect(core.setSecret).toHaveBeenCalledWith('qpm-token')
   })
 
-  it('uploads the qmod and binaries as release assets', async () => {
-    writePackage(repoRoot, { workspace: { outBinaries: ['build/libmy-lib.so'] }, qmod: { output: 'MyMod' } })
-    fs.mkdirSync(path.join(repoRoot, 'build'))
-    fs.writeFileSync(path.join(repoRoot, 'build', 'libmy-lib.so'), 'so')
-    onExec = call => {
-      if (call.command === 'qpm2' && call.args[0] === 'qpkg') {
-        expect(call.args).toContain('--qmod')
-        fs.writeFileSync(path.join(call.cwd!, call.args[1]), 'qpkg')
-        fs.writeFileSync(path.join(call.cwd!, 'MyMod.qmod'), 'qmod')
-      }
-    }
+  it('publishes the url returned by the upload', async () => {
+    writePackage(repoRoot, {})
+    octokit.rest.repos.uploadReleaseAsset.mockImplementationOnce(async () => ({
+      data: { id: 1, name: 'my-lib.qpkg', browser_download_url: 'https://cdn.example.com/my-lib.qpkg' }
+    }))
 
-    await publishRun(params({ uploadQmod: true, uploadBinaries: true }))
+    await publishRun(params())
 
-    expect(releases[0].assets.map(a => a.name).sort()).toEqual(['MyMod.qmod', 'libmy-lib.so', 'my-lib.qpkg'])
-    const upload = octokit.rest.repos.uploadReleaseAsset.mock.calls.find(([c]) => c.name === 'libmy-lib.so')![0]
-    expect(Buffer.from(upload.data as unknown as Buffer).toString()).toBe('so')
+    expect(qpmCalls()[1].args[1]).toBe('https://cdn.example.com/my-lib.qpkg')
   })
 
-  it('warns instead of failing when a binary is missing', async () => {
-    writePackage(repoRoot, { workspace: { outBinaries: ['build/missing.so'] } })
-    emulateQpkg()
+  it('zips and uploads the qmod before building the qpkg, with qmod.downloadUrl from the upload', async () => {
+    writePackage(repoRoot, { qmod: { output: 'MyMod' } })
+    octokit.rest.repos.uploadReleaseAsset.mockImplementationOnce(async () => ({
+      data: { id: 1, name: 'MyMod.qmod', browser_download_url: 'https://cdn.example.com/MyMod.qmod' }
+    }))
+
+    await publishRun(params({ uploadQmod: true }))
+
+    expect(qpmCalls().map(c => c.args.slice(0, 2))).toEqual([
+      ['qmod', 'zip'],
+      ['qpkg', 'my-lib.qpkg'],
+      ['publish', qpkgUrl('1.2.3', 'my-lib.qpkg')]
+    ])
+    expect(qpkgConfig?.qmod.downloadUrl).toBe('https://cdn.example.com/MyMod.qmod')
+    expect(readPackage(repoRoot).qmod.downloadUrl).toBe('https://cdn.example.com/MyMod.qmod')
+  })
+
+  it('uploads binaries as release assets', async () => {
+    writePackage(repoRoot, { workspace: { outBinaries: ['build/libmy-lib.so'] } })
+    fs.mkdirSync(path.join(repoRoot, 'build'))
+    fs.writeFileSync(path.join(repoRoot, 'build', 'libmy-lib.so'), 'so')
 
     await publishRun(params({ uploadBinaries: true }))
 
-    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('missing.so'))
-    expect(releases[0].assets.map(a => a.name)).toEqual(['my-lib.qpkg'])
+    expect(releases[0].assets.map(a => a.name).sort()).toEqual(['libmy-lib.so', 'my-lib.qpkg'])
+    const upload = octokit.rest.repos.uploadReleaseAsset.mock.calls.find(([c]) => c.name === 'libmy-lib.so')![0]
+    expect(Buffer.from(upload.data as Buffer).toString()).toBe('so')
   })
 
-  it('uses an existing qpkg without building', async () => {
-    writePackage(repoRoot, {})
-    fs.writeFileSync(path.join(repoRoot, 'prebuilt.qpkg'), 'qpkg')
+  it('warns instead of failing when a binary or qmod is missing', async () => {
+    writePackage(repoRoot, { workspace: { outBinaries: ['build/missing.so'] } })
+    onExec = call => {
+      if (call.command === 'qpm2' && call.args[0] === 'qpkg') fs.writeFileSync(path.join(call.cwd!, call.args[1]), '')
+    }
 
-    await publishRun(params({ qpkgPath: 'prebuilt.qpkg' }))
+    await publishRun(params({ uploadBinaries: true, uploadQmod: true }))
 
-    expect(qpmCalls().map(c => c.args[0])).toEqual(['publish'])
-    expect(releases[0].assets.map(a => a.name)).toEqual(['prebuilt.qpkg'])
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('missing.so'))
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('my-lib.qmod'))
+    expect(releases[0].assets.map(a => a.name)).toEqual(['my-lib.qpkg'])
   })
 
   it('replaces release assets from a previous run', async () => {
     writePackage(repoRoot, {})
-    emulateQpkg()
     releases.push({ id: 1, tag_name: '1.2.3', assets: [{ id: 2, name: 'my-lib.qpkg', browser_download_url: 'old' }] })
 
     await publishRun(params())
@@ -240,7 +253,6 @@ describe('publishRun', () => {
     const libB = path.join(repoRoot, 'packages', 'lib-b')
     writePackage(libA, { id: 'lib-a' })
     writePackage(libB, { id: 'lib-b' })
-    emulateQpkg()
 
     await publishRun(params({ packagePath: libA, tag: 'v1' }))
     await publishRun(params({ packagePath: libB, tag: 'v1' }))
@@ -250,25 +262,34 @@ describe('publishRun', () => {
     expect(releases[0].assets.map(a => a.name)).toEqual(['lib-a.qpkg', 'lib-b.qpkg'])
   })
 
+  it('only builds and skips publishing when release upload is disabled', async () => {
+    writePackage(repoRoot, {})
+
+    await publishRun(params({ uploadRelease: false, uploadQmod: true }))
+
+    expect(qpmCalls().map(c => c.args.slice(0, 2))).toEqual([
+      ['qmod', 'zip'],
+      ['qpkg', 'my-lib.qpkg']
+    ])
+    expect(releases).toHaveLength(0)
+    expect(octokit.rest.repos.createRelease).not.toHaveBeenCalled()
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('upload_release'))
+  })
+
   it('resolves the NDK while building only when the package requires one', async () => {
     writePackage(repoRoot, { workspace: { ndk: '^27.0.0' } })
-    emulateQpkg()
-
     await publishRun(params({ resolveNdk: true }))
     expect(qpmCalls()[0].args).toContain('--resolve-ndk')
 
     exec.calls.length = 0
     releases.length = 0
-    fs.rmSync(path.join(repoRoot, 'my-lib.qpkg'))
     writePackage(repoRoot, {})
-
     await publishRun(params({ resolveNdk: true }))
     expect(qpmCalls()[0].args).not.toContain('--resolve-ndk')
   })
 
   it('omits --token without a publish token', async () => {
     writePackage(repoRoot, {})
-    emulateQpkg()
 
     await publishRun(params({ publishToken: undefined }))
 

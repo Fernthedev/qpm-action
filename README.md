@@ -2,53 +2,70 @@
   <a href="https://github.com/actions/typescript-action/actions"><img alt="typescript-action status" src="https://github.com/Fernthedev/qpm-action/workflows/build-test/badge.svg"></a>
 </p>
 
-## QPM Rust Github Action
+## QPM Github Action
 
-Usage:
+Sets up [QPM2](https://github.com/QuestPackageManager/QPM.CLI) in Github Actions. It can restore, cache and publish your
+package.
+
+## Usage
 
 ```yaml
-- name: QPM Action
-  uses: Fernthedev/qpm-action@v2
-  with:
-    #required
-    workflow_token: ${{secrets.GITHUB_TOKEN}}
+permissions:
+  contents: write # needed to upload release assets
 
-    qpm_version: 'version@^2.0.0' # Will download the newest qpm release which satisfies the range (default ^2.0.0). Falls back to the bleeding2 pre-release until a satisfying release exists. Use ref@main to download a workflow artifact from a branch or commit.
+steps:
+  - uses: actions/checkout@v4
 
-    restore: true # Run restore on download
-    cache: true # Cache dependencies and any resolved ndk downloads
-    resolve_ndk: true # Resolve the NDK version specified in qpm2.json. Skipped if none is specified. Defaults to true
-    publish: 'late' # Will publish the package at the end of the action run. `now` will publish the package at the end of the qpm step
+  - name: QPM Action
+    uses: Fernthedev/qpm-action@v2
+    with:
+      # required
+      workflow_token: ${{secrets.GITHUB_TOKEN}}
 
-    publish_token: ${{secrets.QPM_TOKEN}} # Token required for authorization publish to qpackages.com
-    version: '1.0.0' # Defaults to qpm version, do not include v
-    tag: 'v1.0.0' # Defaults to version, this is the Github Release TAG, not version! Monorepo packages may share it
+      # QPM version. Uses the newest release in the range.
+      # If no release matches yet, it uses the bleeding2 pre-release.
+      # Use ref@main for a build from a branch or commit.
+      qpm_version: 'version@^2.0.0'
 
-    upload_qmod: true # When publishing, builds and uploads the qmod to the release and sets qmod.downloadUrl
+      package_path: '.' # Folder with qpm2.json. Can be a subfolder (monorepo).
+      restore: true # Run qpm2 restore
+      cache: true # Cache dependencies and the NDK
+      resolve_ndk: true # Download the NDK from qpm2.json. Does nothing if none is set.
 
-    upload_binaries: false # When publishing, uploads workspace.outBinaries to the release
+      publish: 'late' # 'late' publishes at the end of the job. 'now' publishes in this step.
+      publish_token: ${{secrets.QPM_TOKEN}} # Token for qpackages.com
+      version: '1.0.0' # Optional. Overrides the version in qpm2.json. No "v".
+      tag: 'v1.0.0' # Optional. Github release tag. Defaults to the version.
 
-    qpkg_path: 'foo.qpkg' # When publishing, where the QPKG is stored, relative to package_path. If the file does not exist, it is built with `qpm2 qpkg`. Defaults to {id}.qpkg
-
-    package_path: '.' # Directory containing qpm2.json. Can be a subdirectory for monorepos; all qpm2 commands run there.
+      upload_release: true # Upload files to the Github release. If false, nothing is published.
+      upload_qmod: true # Build the qmod and upload it to the release
+      upload_binaries: false # Upload workspace.outBinaries to the release
 ```
 
-### Publishing
+## Publishing
 
-QPM2 publishes a QPKG, no git branches or commits are created. When `publish` is set, the action:
+QPM2 publishes a QPKG. The action does not make git branches or commits.
 
-1. Writes publishing metadata into `qpm2.json` before restore: `version`, `additionalData.url` (if unset) and
-   `qmod.downloadUrl` (if `upload_qmod`). This must happen first, since `qpm2 publish` requires the config inside the
-   QPKG to match `qpm2.json` exactly. Don't edit `qpm2.json` between this action and the publish.
-2. Builds the QPKG with `qpm2 qpkg` unless `qpkg_path` already exists.
-3. Uploads the QPKG (and qmod/binaries if enabled) to the Github release.
-4. Runs `qpm2 publish <qpkg url>` in `package_path`.
+When `publish` is set, the action:
 
-### Monorepos
+1. Before restore, sets `version` and `additionalData.url` (only if empty) in `qpm2.json`.
+2. If `upload_qmod` is on: runs `qpm2 qmod zip`, uploads the qmod, and saves its link in `qmod.downloadUrl`.
+3. Runs `qpm2 qpkg` to build `{id}.qpkg`.
+4. Uploads the binaries (if `upload_binaries` is on) and the QPKG to the Github release.
+5. Runs `qpm2 publish` with the QPKG link from the upload.
 
-Set `package_path` to the package's subdirectory; every `qpm2` command runs there and `additionalData.url` points to the
-package's directory in the repository. Packages can share the same release tag: the QPKG, qmod and binaries uploaded as
-release assets are named after each package (`{id}.qpkg`, `{qmod id}.qmod`, binary file names), and an asset with the same name from a previous run is replaced.
+All links come from the upload, they are not guessed.
+
+Do not change `qpm2.json` after this action runs. `qpm2 publish` checks that the QPKG matches `qpm2.json`.
+
+With `upload_release: false`, the qmod and QPKG are only built. Nothing is uploaded and `qpm2 publish` is skipped, because there is no QPKG link.
+
+## Monorepos
+
+Set `package_path` to the package folder. All `qpm2` commands run in that folder.
+
+Many packages can use the same release tag. Each package's files have their own names (`{id}.qpkg`, the qmod and the
+binaries). If a file with the same name is already in the release, it is replaced.
 
 ```yaml
 - uses: Fernthedev/qpm-action@v2
@@ -57,14 +74,16 @@ release assets are named after each package (`{id}.qpkg`, `{qmod id}.qmod`, bina
     package_path: 'packages/my-lib'
     publish: 'late'
     publish_token: ${{secrets.QPM_TOKEN}}
-    tag: 'v1.0.0' # shared with the other packages of the repository
+    tag: 'v1.0.0'
 ```
 
-### Release permissions
+## Migrating from v1
 
-Publishing uploads to a Github release, so `workflow_token` needs `contents: write`:
+1. Change `Fernthedev/qpm-action@v1` to `Fernthedev/qpm-action@v2`.
+2. Move your package to QPM2: `qpm.json` becomes `qpm2.json`. Run `qpm2 migrate` to convert it.
+3. Remove `qpm_release_bin`, `qpm_debug_bin` and `qpm_qmod`. Use `upload_binaries` and `upload_qmod` instead.
+4. Remove `qpm_version: 'version@^1.0.0'`, or set it to `'version@^2.0.0'`.
+5. Add `permissions: contents: write` to the job, so the action can upload to the release.
+6. v2 does not make `version/v*` branches anymore. You can delete old ones if you want.
 
-```yaml
-permissions:
-  contents: write
-```
+`resolve_ndk` is now on by default.

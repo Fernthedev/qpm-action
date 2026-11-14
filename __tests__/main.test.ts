@@ -7,8 +7,10 @@ import { mockCore, mockExec } from './helpers/mocks.js'
 mockCore()
 const exec = mockExec()
 const cache = {
-  restoreCache: jest.fn(async (): Promise<string | undefined> => undefined),
-  saveCache: jest.fn(async () => 1)
+  restoreCache: jest.fn<(paths: string[], key: string, restoreKeys?: string[]) => Promise<string | undefined>>(
+    async () => undefined
+  ),
+  saveCache: jest.fn<(paths: string[], key: string) => Promise<number>>(async () => 1)
 }
 jest.unstable_mockModule('@actions/cache', () => cache)
 

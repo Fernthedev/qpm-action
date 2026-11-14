@@ -104,7 +104,7 @@ export async function run(): Promise<void> {
     const paths = [cachePath]
     const key = `qpm-cache-${sharedQpmFileHash ?? ''}`
     if (parameters.cache) {
-      core.info(`Restoring cache at ${paths}`)
+      core.info(`Restoring cache at ${paths.join(', ')}`)
       const restoreKeys = ['qpm-cache-']
       await cache.restoreCache(paths, key, restoreKeys, undefined, true)
     }

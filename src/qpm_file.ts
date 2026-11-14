@@ -40,7 +40,7 @@ export const QPM_JSON = 'qpm2.json'
 export const QPM_SHARED_JSON = 'qpm2.shared.json'
 
 export async function readQPM<T extends QPMPackage | QPMSharedPackage>(file: fsOld.PathLike): Promise<T> {
-  return JSON.parse((await fs.readFile(file, undefined)).toString())
+  return JSON.parse((await fs.readFile(file, undefined)).toString()) as T
 }
 
 export async function writeQPM(file: fsOld.PathLike, qpm: QPMPackage | QPMSharedPackage): Promise<void> {

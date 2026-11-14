@@ -8,15 +8,11 @@ export enum PublishMode {
   late = 'late'
 }
 
-export function getReleaseDownloadLink(user: string, repo: string, version: string): string {
-  return `https://github.com/${user}/${repo}/releases/download/${version}`
-}
-
 export async function execAsync(command: string): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(command, (err, stout, sterr) => {
       if (err) {
-        reject(sterr)
+        reject(new Error(sterr))
       } else {
         resolve(stout)
       }
@@ -30,7 +26,8 @@ export async function githubExecAsync(
 ): Promise<ExecOutput> {
   const output = await githubExec(
     command,
-    args?.filter(x => x!).map(x => x! as string),
+    // drop disabled (false/undefined) arguments
+    args?.filter((x): x is string => !!x),
     options
   )
   output.stdout = stripAnsi(output.stdout)
@@ -42,9 +39,26 @@ function stringOrUndefined(str: string): string | undefined {
   return str.trim() === '' ? undefined : str
 }
 
-//eslint-ignore @typescript-eslint/explicit-function-return-type
-export function getActionParameters() {
-  const publish: PublishMode | undefined = stringOrUndefined(core.getInput('publish')) as PublishMode
+/** Inputs of the action, see action.yml */
+export interface ActionParameters {
+  qpmVersion: string | undefined
+  packagePath: string | undefined
+  tag: string | undefined
+  uploadBinaries: boolean
+  uploadQmod: boolean
+  uploadRelease: boolean
+  token: string
+  publish: PublishMode | undefined
+  version: string | undefined
+  resolveNdk: boolean
+  cache: boolean
+  cacheLockfile: boolean
+  restore: boolean
+  publishToken: string | undefined
+}
+
+export function getActionParameters(): ActionParameters {
+  const publish: PublishMode | undefined = stringOrUndefined(core.getInput('publish')) as PublishMode | undefined
   const qpmVersion: string | undefined = stringOrUndefined(core.getInput('qpm_version'))
 
   // publish version
@@ -64,7 +78,7 @@ export function getActionParameters() {
   const uploadQmod = core.getBooleanInput('upload_qmod')
   const uploadBinaries = core.getBooleanInput('upload_binaries')
 
-  const qpkgPath = stringOrUndefined(core.getInput('qpkg_path'))
+  const uploadRelease = core.getBooleanInput('upload_release')
 
   // This should be a token with access to your repository scoped in as a secret.
   // The YML workflow will need to set myToken with the GitHub Secret Token
@@ -78,7 +92,7 @@ export function getActionParameters() {
     tag,
     uploadBinaries,
     uploadQmod,
-    qpkgPath,
+    uploadRelease,
     token: myToken,
     publish,
     version,

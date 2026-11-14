@@ -88,7 +88,10 @@ async function installQpmZip(url: string, token: string, cacheVersion: string): 
     }
   })
 
-  const execFile = path.join(cachedPath, process.platform === 'win32' ? `${QPM_EXECUTABLE_NAME}.exe` : QPM_EXECUTABLE_NAME)
+  const execFile = path.join(
+    cachedPath,
+    process.platform === 'win32' ? `${QPM_EXECUTABLE_NAME}.exe` : QPM_EXECUTABLE_NAME
+  )
   if (process.platform !== 'win32') {
     await githubExecAsync('chmod', ['+x', execFile])
   }
@@ -148,7 +151,8 @@ export async function downloadQpmVersion(
   let cacheVersion: string
 
   if (release) {
-    cacheVersion = parseReleaseTag(release.tag_name)!.version
+    // selectQpmRelease only returns releases with a version tag
+    cacheVersion = parseReleaseTag(release.tag_name)?.version ?? release.tag_name
   } else {
     core.warning(`No QPM release satisfies ${versionReq.raw}, falling back to ${QPM_BLEEDING_TAG}`)
     release = releases.find(r => r.tag_name === QPM_BLEEDING_TAG)
@@ -168,7 +172,9 @@ export async function downloadQpmVersion(
   const expectedAssetName = getQPM_ReleaseExecutableName()
   const asset = release.assets.find(a => a.name === expectedAssetName)
   if (!asset) {
-    core.error(`No asset ${expectedAssetName} found in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${release.tag_name}`)
+    core.error(
+      `No asset ${expectedAssetName} found in ${QPM_REPOSITORY_OWNER}/${QPM_REPOSITORY_NAME}@${release.tag_name}`
+    )
     return undefined
   }
 

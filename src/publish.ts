@@ -1,4 +1,4 @@
-import { getActionParameters, getReleaseDownloadLink, githubExecAsync } from './utils.js'
+import { ActionParameters, githubExecAsync } from './utils.js'
 
 import * as core from '@actions/core'
 import * as github from '@actions/github'
@@ -10,7 +10,8 @@ import { GitHub } from '@actions/github/lib/utils.js'
 import path from 'path'
 import { getOrMakeRelease, QPM_EXECUTABLE_NAME } from './api.js'
 
-type ActionParameters = ReturnType<typeof getActionParameters>
+/** Release to upload assets to */
+type Release = { octokit: InstanceType<typeof GitHub>; releaseId: number }
 
 /** Absolute path of the package directory */
 function packageDir(packagePath: string | undefined): string {
@@ -41,18 +42,24 @@ export function qmodPath(qpm: QPMPackage): string {
   return `${out.slice(0, out.length - path.extname(out).length)}.qmod`
 }
 
+/** Url of the repository running the action */
 function repoUrl(): string {
   return `https://github.com/${github.context.repo.owner}/${github.context.repo.repo}`
 }
 
+/** The qpkg built by the action, `{id}.qpkg` in the package directory */
+function qpkgFile(qpm: QPMPackage, packagePath: string | undefined): string {
+  return path.join(packageDir(packagePath), `${qpm.id}.qpkg`)
+}
+
 /**
- * Writes publishing metadata into qpm2.json.
+ * Writes publishing metadata into qpm2.json before restore.
  *
  * QPM2 publishing checks that the config embedded in the qpkg matches qpm2.json exactly,
- * so this must run before restore/build, never after the qpkg is built.
+ * so it must be final before the qpkg is built.
  */
 export async function preparePublish(params: ActionParameters): Promise<void> {
-  const { packagePath, uploadQmod, tag } = params
+  const { packagePath } = params
   const qpmPath = path.join(packageDir(packagePath), QPM_JSON)
   const qpm = await readQPM<QPMPackage>(qpmPath)
 
@@ -62,22 +69,11 @@ export async function preparePublish(params: ActionParameters): Promise<void> {
     const subdir = packageSubdirectory(packagePath)
     qpm.additionalData.url = subdir === '' ? repoUrl() : `${repoUrl()}/tree/HEAD/${subdir}`
     core.info(`Setting additionalData.url to ${qpm.additionalData.url}`)
+    await writeQPM(qpmPath, qpm)
   }
-
-  if (uploadQmod) {
-    const download = getReleaseDownloadLink(
-      github.context.repo.owner,
-      github.context.repo.repo,
-      releaseTag(qpm, tag)
-    )
-    qpm.qmod ??= {}
-    qpm.qmod.downloadUrl = `${download}/${encodeURIComponent(path.basename(qmodPath(qpm)))}`
-    core.info(`Setting qmod.downloadUrl to ${qpm.qmod.downloadUrl}`)
-  }
-
-  await writeQPM(qpmPath, qpm)
 }
 
+/** Upload a file to the release, returning the download url Github gives back */
 export async function uploadReleaseAsset(
   octokit: InstanceType<typeof GitHub>,
   releaseId: number,
@@ -97,6 +93,7 @@ export async function uploadReleaseAsset(
     await octokit.rest.repos.deleteReleaseAsset({ asset_id: existing.id, ...github.context.repo })
   }
 
+  // upload the file as raw bytes
   core.info(`Uploading ${filePath} as ${name}`)
   const contents = await fs.readFile(filePath)
   const asset = await octokit.rest.repos.uploadReleaseAsset({
@@ -114,67 +111,103 @@ export async function uploadReleaseAsset(
   return asset.data.browser_download_url
 }
 
+/** Upload the file if it exists, returning its download url */
 async function uploadIfExists(
   octokit: InstanceType<typeof GitHub>,
   releaseId: number,
   file: string,
   kind: string
-): Promise<void> {
+): Promise<string | undefined> {
   if (!fsSync.existsSync(file)) {
     core.warning(`${kind} ${file} does not exist, skipping upload`)
-    return
+    return undefined
   }
-  await uploadReleaseAsset(octokit, releaseId, file)
+  return uploadReleaseAsset(octokit, releaseId, file)
 }
 
+/**
+ * Build the qmod and qpkg, uploading them and the binaries to the release when `release` is set.
+ * The qmod is uploaded before the qpkg is built, so qmod.downloadUrl in the qpkg is the url Github returned.
+ * Returns the uploaded qpkg url
+ */
+async function buildAndUpload(
+  qpm: QPMPackage,
+  params: ActionParameters,
+  release: Release | undefined
+): Promise<string | undefined> {
+  const { uploadBinaries, uploadQmod, packagePath, resolveNdk } = params
+  const cwd = packageDir(packagePath)
+
+  if (uploadQmod) {
+    // build the mod and zip the qmod
+    await githubExecAsync(QPM_EXECUTABLE_NAME, ['qmod', 'zip'], { cwd })
+
+    const qmodUrl =
+      release && (await uploadIfExists(release.octokit, release.releaseId, path.resolve(cwd, qmodPath(qpm)), 'Qmod'))
+
+    // save the real qmod url, so the qpkg built next contains it
+    if (qmodUrl && qpm.qmod?.downloadUrl !== qmodUrl) {
+      core.info(`Setting qmod.downloadUrl to ${qmodUrl}`)
+      qpm.qmod ??= {}
+      qpm.qmod.downloadUrl = qmodUrl
+      await writeQPM(path.join(cwd, QPM_JSON), qpm)
+    }
+  }
+
+  // build and pack the qpkg with the final qpm2.json
+  const qpkgPath = qpkgFile(qpm, packagePath)
+  await githubExecAsync(
+    QPM_EXECUTABLE_NAME,
+    ['qpkg', path.basename(qpkgPath), resolveNdk && qpm.workspace?.ndk !== undefined && '--resolve-ndk'],
+    { cwd }
+  )
+
+  // nothing to upload when release upload is off
+  if (!release) return undefined
+
+  if (uploadBinaries) {
+    for (const file of qpm.workspace?.outBinaries ?? []) {
+      await uploadIfExists(release.octokit, release.releaseId, path.resolve(cwd, file), 'Binary')
+    }
+  }
+
+  return uploadReleaseAsset(release.octokit, release.releaseId, qpkgPath)
+}
+
+/** Build, upload to the Github release and publish the package to qpackages */
 export async function publishRun(params: ActionParameters): Promise<void> {
-  const { token, uploadBinaries, uploadQmod, publishToken, tag, packagePath, resolveNdk } = params
-  const octokit = github.getOctokit(token)
+  const { publishToken, packagePath, token, tag } = params
 
   const cwd = packageDir(packagePath)
   const qpm = await readQPM<QPMPackage>(path.join(cwd, QPM_JSON))
 
   core.info(`Publishing ${qpm.id} v${qpm.version}`)
 
-  // build the qpkg unless one was provided. Paths are relative to the package directory
-  const qpkgPath = path.resolve(cwd, params.qpkgPath ?? `${qpm.id}.qpkg`)
-  if (!fsSync.existsSync(qpkgPath)) {
-    core.info(`Creating qpkg file at ${qpkgPath}`)
-    await githubExecAsync(
-      QPM_EXECUTABLE_NAME,
-      [
-        'qpkg',
-        path.relative(cwd, qpkgPath),
-        uploadQmod && '--qmod',
-        resolveNdk && qpm.workspace?.ndk !== undefined && '--resolve-ndk'
-      ],
-      { cwd }
-    )
+  // get or create the release, it may be shared with other packages
+  let release: Release | undefined
+  if (params.uploadRelease) {
+    const octokit = github.getOctokit(token)
+    release = { octokit, releaseId: await getOrMakeRelease(octokit, releaseTag(qpm, tag)) }
   }
 
-  const releaseId = await getOrMakeRelease(octokit, releaseTag(qpm, tag))
-
-  if (uploadBinaries) {
-    for (const file of qpm.workspace?.outBinaries ?? []) {
-      await uploadIfExists(octokit, releaseId, path.resolve(cwd, file), 'Binary')
-    }
-  }
-  if (uploadQmod) {
-    await uploadIfExists(octokit, releaseId, path.resolve(cwd, qmodPath(qpm)), 'Qmod')
+  const qpkgUrl = await buildAndUpload(qpm, params, release)
+  // qpm2 publish needs a qpkg url, which only exists after uploading
+  if (!qpkgUrl) {
+    core.warning('upload_release is false, so there is no qpkg url to publish. Skipping qpm2 publish')
+    return
   }
 
-  const url = await uploadReleaseAsset(octokit, releaseId, qpkgPath)
-
+  // hide the token from the logs
   if (publishToken) {
     core.setSecret(publishToken)
   } else {
     core.warning('No publish_token provided, qpm2 will fall back to its stored publish key')
   }
 
-  core.info(`Publishing qpkg ${url} to qpackages`)
+  core.info(`Publishing qpkg ${qpkgUrl} to qpackages`)
   await githubExecAsync(
     QPM_EXECUTABLE_NAME,
-    [QPM_COMMAND_PUBLISH, url, '--backend', 'qpackages', publishToken && '--token', publishToken],
+    [QPM_COMMAND_PUBLISH, qpkgUrl, '--backend', 'qpackages', publishToken && '--token', publishToken],
     { cwd }
   )
 }
