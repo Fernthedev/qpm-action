@@ -21,14 +21,14 @@ function params(overrides: Partial<Params> = {}): Params {
     packagePath: repoRoot,
     tag: undefined,
     uploadBinaries: false,
-    uploadQmod: false,
+    uploadQmod: undefined,
     uploadRelease: true,
     token: 'gh-token',
     publish: undefined,
     version: undefined,
+    versionSource: 'qpm2.json',
     resolveNdk: false,
     cache: false,
-    cacheLockfile: false,
     restore: false,
     publishToken: 'qpm-token',
     ...overrides
@@ -294,6 +294,54 @@ describe('publishRun', () => {
     await publishRun(params({ publishToken: undefined }))
 
     expect(qpmCalls()[1].args).not.toContain('--token')
-    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('publish_token'))
+  })
+
+  it('zips the qmod when the package has a mod template', async () => {
+    writePackage(repoRoot, {})
+    fs.writeFileSync(path.join(repoRoot, 'mod.template.json'), '{}')
+
+    const result = await publishRun(params())
+
+    expect(qpmCalls().map(c => c.args.slice(0, 2))).toEqual([
+      ['qmod', 'zip'],
+      ['qpkg', 'my-lib.qpkg'],
+      ['publish', qpkgUrl('1.2.3', 'my-lib.qpkg')]
+    ])
+    expect(result.qmodUrl).toBe(qpkgUrl('1.2.3', 'my-lib.qmod'))
+    expect(result.qpkgUrl).toBe(qpkgUrl('1.2.3', 'my-lib.qpkg'))
+  })
+
+  it('uses qmod.template for detection', async () => {
+    writePackage(repoRoot, { qmod: { template: 'templates/mod.json' } })
+    fs.mkdirSync(path.join(repoRoot, 'templates'))
+    fs.writeFileSync(path.join(repoRoot, 'templates', 'mod.json'), '{}')
+
+    await publishRun(params())
+
+    expect(qpmCalls()[0].args).toEqual(['qmod', 'zip'])
+  })
+
+  it('skips the qmod for libraries without a mod template', async () => {
+    writePackage(repoRoot, {})
+
+    const result = await publishRun(params())
+
+    expect(qpmCalls().map(c => c.args[0])).toEqual(['qpkg', 'publish'])
+    expect(result.qmodUrl).toBeUndefined()
+  })
+
+  it('lets upload_qmod override the detection', async () => {
+    writePackage(repoRoot, {})
+    fs.writeFileSync(path.join(repoRoot, 'mod.template.json'), '{}')
+
+    await publishRun(params({ uploadQmod: false }))
+    expect(qpmCalls().map(c => c.args[0])).toEqual(['qpkg', 'publish'])
+
+    exec.calls.length = 0
+    releases.length = 0
+    fs.rmSync(path.join(repoRoot, 'mod.template.json'))
+
+    await publishRun(params({ uploadQmod: true }))
+    expect(qpmCalls()[0].args).toEqual(['qmod', 'zip'])
   })
 })

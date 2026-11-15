@@ -1,0 +1,6 @@
+root = true
+
+# shell scripts use 4 spaces, shfmt reads this
+[script/*]
+indent_style = space
+indent_size = 4

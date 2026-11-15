@@ -24,11 +24,13 @@ jobs:
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         id: setup-node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@7 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -62,7 +64,7 @@ jobs:
       - if: ${{ failure() && steps.diff.outcome == 'failure' }}
         name: Upload Artifact
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7 # v7.0.2
         with:
           name: dist
           path: dist/

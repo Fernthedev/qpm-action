@@ -1,0 +1,3 @@
+# Azurite's public, well-known development storage key (devstoreaccount1).
+# It is bundled into dist/ from @azure/storage-blob, used by @actions/cache. Not a real secret.
+azure-storage-account-key

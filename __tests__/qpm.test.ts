@@ -20,6 +20,7 @@ const tc = {
 jest.unstable_mockModule('@actions/tool-cache', () => tc)
 
 const {
+  parseQpmVersion,
   bleedingCacheVersion,
   downloadQpmBleeding,
   downloadQpmVersion,
@@ -97,7 +98,49 @@ describe('bleedingCacheVersion', () => {
   })
 })
 
+describe('parseQpmVersion', () => {
+  const range = (input: string | undefined) => {
+    const spec = parseQpmVersion(input)
+    return spec.kind === 'release' ? spec.range.raw : spec
+  }
+
+  it('defaults to the newest 2.x release', () => {
+    expect(range(undefined)).toBe('^2.0.0')
+    expect(range('  ')).toBe('^2.0.0')
+  })
+
+  it('treats semver ranges and versions as releases', () => {
+    expect(range('^2.1.0')).toBe('^2.1.0')
+    expect(range('2.1.0')).toBe('2.1.0')
+    expect(range('>=2 <3')).toBe('>=2 <3')
+  })
+
+  it('maps bleeding to the bleeding pre-release', () => {
+    expect(parseQpmVersion('bleeding')).toEqual({ kind: 'bleeding' })
+    expect(parseQpmVersion('bleeding2')).toEqual({ kind: 'bleeding' })
+  })
+
+  it('treats anything else as a branch or commit', () => {
+    expect(parseQpmVersion('main')).toEqual({ kind: 'ref', ref: 'main' })
+    expect(parseQpmVersion('abc123f')).toEqual({ kind: 'ref', ref: 'abc123f' })
+  })
+
+  it('still accepts the old prefixes', () => {
+    expect(range('version@^2.0.0')).toBe('^2.0.0')
+    expect(range('version@')).toBe('^2.0.0')
+    expect(parseQpmVersion('ref@main')).toEqual({ kind: 'ref', ref: 'main' })
+    expect(parseQpmVersion('ref@')).toEqual({ kind: 'ref', ref: undefined })
+  })
+})
+
 describe('downloadQpmVersion', () => {
+  it('downloads bleeding2 directly when asked, without warning', async () => {
+    await downloadQpmVersion(releasesOctokit([release(9, 'v2.0.1'), bleeding]), 'token', 'bleeding')
+
+    expect(tc.downloadTool).toHaveBeenCalledWith('https://example.com/bleeding2.zip', undefined, 'Bearer token')
+    expect(core.warning).not.toHaveBeenCalled()
+  })
+
   it('falls back to bleeding2 until a 2.x release exists', async () => {
     const exe = await downloadQpmVersion(releasesOctokit([v1, bleedingV1, bleeding]), 'token')
 

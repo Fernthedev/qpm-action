@@ -1,0 +1,9 @@
+# Actions are pinned to version tags (e.g. actions/checkout@v7) and updated by Dependabot
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        '*': ref-pin
+  # ci.yml tests the action from the checkout with `uses: ./`
+  self-repository:
+    disable: true

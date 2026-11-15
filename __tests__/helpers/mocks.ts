@@ -34,8 +34,13 @@ export function mockExec(onExec?: (call: ExecCall) => void | Promise<void>, stdo
     await onExec?.(call)
     return { exitCode: 0, stdout, stderr: '' }
   })
-  jest.unstable_mockModule('@actions/exec', () => ({ getExecOutput }))
-  return { calls, getExecOutput }
+  // other @actions packages (tool-cache) import exec too
+  const exec = jest.fn(async (command: string, args?: string[], options?: { cwd?: string }) => {
+    await getExecOutput(command, args, options)
+    return 0
+  })
+  jest.unstable_mockModule('@actions/exec', () => ({ getExecOutput, exec }))
+  return { calls, getExecOutput, exec }
 }
 
 export interface FakeAsset {
@@ -97,9 +102,9 @@ export function fakeOctokit(initial: { id: number; tag_name: string; assets?: Fa
 }
 
 /** Mocks @actions/github with a fixed context and the given octokit */
-export function mockGithub(octokit: unknown) {
+export function mockGithub(octokit: unknown, ref = 'refs/heads/main') {
   const github = {
-    context: { repo: REPO, sha: SHA },
+    context: { repo: REPO, sha: SHA, ref },
     getOctokit: jest.fn(() => octokit)
   }
   jest.unstable_mockModule('@actions/github', () => github)

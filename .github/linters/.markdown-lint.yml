@@ -4,7 +4,7 @@ MD004:
 
 # Ordered list item prefix
 MD029:
-  style: one
+  style: ordered
 
 # Spaces after list markers
 MD030:
@@ -16,3 +16,9 @@ MD030:
 # Code block style
 MD046:
   style: fenced
+
+# Prettier wraps prose at 120 (.prettierrc.json). Tables and code are not wrapped
+MD013:
+  line_length: 120
+  tables: false
+  code_blocks: false

@@ -8,11 +8,10 @@ import * as crypto from 'crypto'
 
 import { QPM_COMMAND_CACHE_PATH, QPM_COMMAND_RESTORE } from './constants.js'
 import { PublishMode, getActionParameters, githubExecAsync } from './utils.js'
-import { downloadQpmBleeding, downloadQpmVersion } from './qpm.js'
+import { downloadQpm } from './qpm.js'
 import { QPM_JSON, QPM_SHARED_JSON, QPMPackage, readQPM, writeQPM } from './qpm_file.js'
 import { preparePublish, publishRun } from './publish.js'
 import stripAnsi from 'strip-ansi'
-import semver from 'semver'
 
 /**
  * Resolve the NDK required by qpm2.json, downloading it if necessary.
@@ -70,29 +69,21 @@ export async function run(): Promise<void> {
       return null
     })()
 
+    // fail before doing any work if publishing can't succeed
+    if (parameters.publish && !parameters.publishToken) {
+      core.setFailed('publish_token is required to publish')
+      return
+    }
+
     const octokit = github.getOctokit(token)
 
     // download QPM
-    let qpmBinaryPath: string | undefined
-
-    if (qpmVersion === undefined || qpmVersion.startsWith('version@')) {
-      const versionReq = qpmVersion?.split('version@')[1]
-      const versionRange = versionReq ? new semver.Range(versionReq) : undefined
-
-      qpmBinaryPath = await downloadQpmVersion(octokit, token, versionRange)
-    } else if (qpmVersion.startsWith('ref@')) {
-      let ref: string | undefined = qpmVersion.split('ref@')[1]
-      if (ref.trim() === '') ref = undefined
-
-      qpmBinaryPath = await downloadQpmBleeding(octokit, token, ref)
-    } else {
-      core.error('Unable to parse qpm version, skipping')
-    }
-
+    const qpmBinaryPath = await downloadQpm(octokit, token, qpmVersion)
     if (!qpmBinaryPath) {
       core.setFailed('Unable to download QPM, failing')
       return
     }
+    core.setOutput('qpm_path', qpmBinaryPath)
 
     let cachePathOutput = (await githubExecAsync(qpmBinaryPath, QPM_COMMAND_CACHE_PATH)).stdout
 
@@ -122,15 +113,14 @@ export async function run(): Promise<void> {
       await resolveNDK(qpmBinaryPath, qpmFilePath, ndkCache, parameters.cache, packageDir)
     }
 
-    // Update version
-    if (version) {
-      core.info(`Using version ${version}`)
-      const qpm = await readQPM<QPMPackage>(qpmFilePath)
-
+    // Update version, from the input or the git tag
+    const qpm = await readQPM<QPMPackage>(qpmFilePath)
+    if (version && version !== qpm.version) {
       qpm.version = version
-
       await writeQPM(qpmFilePath, qpm)
     }
+    core.info(`Using version ${qpm.version} (from ${parameters.versionSource})`)
+    core.setOutput('version', qpm.version)
 
     // qpm2.json must be final before the qpkg is built, so publish metadata is written now
     if (parameters.publish) {
@@ -147,8 +137,11 @@ export async function run(): Promise<void> {
       await cache.saveCache(paths, key)
     }
 
+    // late publish runs in the post step instead, where outputs can't be set
     if (parameters.publish === PublishMode.now) {
-      await publishRun(parameters)
+      const { qpkgUrl, qmodUrl } = await publishRun(parameters)
+      if (qpkgUrl) core.setOutput('qpkg_url', qpkgUrl)
+      if (qmodUrl) core.setOutput('qmod_url', qmodUrl)
     }
   } catch (error) {
     if (error instanceof Error) core.setFailed(error.message)

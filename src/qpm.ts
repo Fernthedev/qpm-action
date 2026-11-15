@@ -13,9 +13,8 @@ import {
   QPM_REPOSITORY_WORKFLOW_FILE
 } from './constants.js'
 import { githubExecAsync } from './utils.js'
-import { GitHub } from '@actions/github/lib/utils.js'
 import semver from 'semver'
-import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME } from './api.js'
+import { getQPM_ArtifactExecutableName, getQPM_ReleaseExecutableName, QPM_EXECUTABLE_NAME, Octokit } from './api.js'
 
 const QPM_REPO = { owner: QPM_REPOSITORY_OWNER, repo: QPM_REPOSITORY_NAME }
 
@@ -100,7 +99,7 @@ async function installQpmZip(url: string, token: string, cacheVersion: string): 
 
 /** Download QPM from a workflow artifact of QPM.CLI, for `ref@` */
 export async function downloadQpmBleeding(
-  octokit: InstanceType<typeof GitHub>,
+  octokit: Octokit,
   token: string,
   ref: string | undefined
 ): Promise<string | undefined> {
@@ -136,28 +135,76 @@ export async function downloadQpmBleeding(
   return installQpmZip(artifact.archive_download_url, token, cacheVersion)
 }
 
+/** Which QPM to download, parsed from the `qpm_version` input */
+export type QpmVersionSpec =
+  { kind: 'release'; range: semver.Range } | { kind: 'bleeding' } | { kind: 'ref'; ref: string | undefined }
+
 /**
- * Download the newest QPM release satisfying the range.
- * Until a release satisfies it, the bleeding pre-release is used instead
+ * Parse `qpm_version`:
+ * empty → newest ^2.0.0 release, `bleeding` → bleeding2 pre-release,
+ * a semver range → newest matching release, anything else → branch/sha workflow artifact.
+ * The old `version@<range>` and `ref@<ref>` forms still work
+ */
+export function parseQpmVersion(input: string | undefined): QpmVersionSpec {
+  const value = input?.trim() ?? ''
+
+  if (value === '') return { kind: 'release', range: new semver.Range(QPM_DEFAULT_VERSION_RANGE) }
+  if (value === 'bleeding' || value === QPM_BLEEDING_TAG) return { kind: 'bleeding' }
+
+  if (value.startsWith('version@')) {
+    const range = value.slice('version@'.length).trim()
+    return { kind: 'release', range: new semver.Range(range === '' ? QPM_DEFAULT_VERSION_RANGE : range) }
+  }
+  if (value.startsWith('ref@')) {
+    const ref = value.slice('ref@'.length).trim()
+    return { kind: 'ref', ref: ref === '' ? undefined : ref }
+  }
+
+  if (semver.validRange(value) !== null) return { kind: 'release', range: new semver.Range(value) }
+  return { kind: 'ref', ref: value }
+}
+
+/** Download QPM as described by the `qpm_version` input, returning the executable path */
+export async function downloadQpm(
+  octokit: Octokit,
+  token: string,
+  input: string | undefined
+): Promise<string | undefined> {
+  const spec = parseQpmVersion(input)
+  switch (spec.kind) {
+    case 'release':
+      return downloadQpmVersion(octokit, token, spec.range)
+    case 'bleeding':
+      return downloadQpmVersion(octokit, token, 'bleeding')
+    case 'ref':
+      return downloadQpmBleeding(octokit, token, spec.ref)
+  }
+}
+
+/**
+ * Download the newest QPM release satisfying the range, or the bleeding pre-release.
+ * Until a release satisfies the range, the bleeding pre-release is used instead
  */
 export async function downloadQpmVersion(
-  octokit: InstanceType<typeof GitHub>,
+  octokit: Octokit,
   token: string,
-  versionReq: semver.Range = new semver.Range(QPM_DEFAULT_VERSION_RANGE)
+  versionReq: semver.Range | 'bleeding' = new semver.Range(QPM_DEFAULT_VERSION_RANGE)
 ): Promise<string | undefined> {
   const releases = await octokit.paginate(octokit.rest.repos.listReleases, { ...QPM_REPO, per_page: 100 })
 
-  let release = selectQpmRelease(releases, versionReq)
+  let release = versionReq === 'bleeding' ? undefined : selectQpmRelease(releases, versionReq)
   let cacheVersion: string
 
   if (release) {
     // selectQpmRelease only returns releases with a version tag
     cacheVersion = parseReleaseTag(release.tag_name)?.version ?? release.tag_name
   } else {
-    core.warning(`No QPM release satisfies ${versionReq.raw}, falling back to ${QPM_BLEEDING_TAG}`)
+    if (versionReq !== 'bleeding') {
+      core.warning(`No QPM release satisfies ${versionReq.raw}, falling back to ${QPM_BLEEDING_TAG}`)
+    }
     release = releases.find(r => r.tag_name === QPM_BLEEDING_TAG)
     if (!release) {
-      core.error(`Unable to find a QPM release for ${versionReq.raw} or ${QPM_BLEEDING_TAG}`)
+      core.error(`Unable to find the QPM ${QPM_BLEEDING_TAG} release`)
       return undefined
     }
     // the bleeding release is recreated for every build, so its id identifies the build

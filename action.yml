@@ -1,82 +1,82 @@
 name: 'QPM Action'
-description: 'Provides utilities for qpm CI'
+description: 'Sets up QPM2, restores and caches dependencies, and publishes packages to qpackages.com'
 author: 'Fernthedev'
+
 inputs:
-  package_path:
-    required: false
-    description:
-      'Specifies the path to the directory containing qpm2.json, relative to the repository root. Use a subdirectory for
-      packages inside a monorepo'
-    default: '.'
-
-  publish:
-    required: false
-    description:
-      'Denotes if this will publish to QPM qpackages.com. Possible values are: "late", "now" or undefined. Late publish
-      will only run if action ran with success'
-
-  upload_release:
-    required: false
-    description:
-      'Denotes if the qpkg, qmod and binaries should be uploaded to the Github release when publishing. When false, they
-      are only built and qpm2 publish is skipped, since there is no qpkg url to publish'
-    default: 'true'
-
-  upload_qmod:
-    required: false
-    description: 'Denotes if the qmod should be built and uploaded to the release'
-    default: 'true'
-
-  upload_binaries:
-    required: false
-    description: 'Denotes if the binaries should be uploaded to the release'
-    default: 'false'
-
+  # Setup
   qpm_version:
     required: false
     description:
-      'The version of QPM to download. Use version@<range> for the newest release satisfying the range, falling back to
-      the bleeding2 pre-release until one exists, or ref@<branch|sha> for a QPM.CLI workflow artifact'
-    default: 'version@^2.0.0'
-
-  resolve_ndk:
+      'QPM to download. A semver range (^2.0.0) uses the newest matching release, falling back to the bleeding
+      pre-release until one exists. "bleeding" uses the bleeding pre-release. Anything else is a QPM.CLI branch or
+      commit'
+    default: '^2.0.0'
+  package_path:
     required: false
-    description:
-      'Should NDK be downloaded on restore. Will do nothing if no NDK is specified in qpm2.json. Will recycle existing
-      NDK if present'
-    default: 'true'
-
-  version:
-    required: false
-    description: 'Specifies version to publish. Requires publish'
-  tag:
-    required: false
-    description:
-      'Specifies tag to use for github release. Defaults to version. Packages of a monorepo may share the same release'
-
+    description: 'Folder containing qpm2.json, relative to the repository root. Can be a subfolder for monorepos'
+    default: '.'
   restore:
     required: false
-    description: 'Whether restore should be called. This will use the cache if possible'
+    description: 'Run qpm2 restore'
     default: 'true'
-
   cache:
     required: false
-    description: 'Specifies if the action should handle caches'
+    description: 'Cache QPM dependencies and the NDK'
     default: 'true'
-  cache_lockfile:
+  resolve_ndk:
     required: false
-    description: 'Specifies if the action should use caches with qpm2.shared.json'
+    description: 'Download the NDK required by qpm2.json. Does nothing if none is set'
+    default: 'true'
+
+  # Publishing
+  publish:
+    required: false
+    description:
+      'Publish to qpackages.com. "late" publishes at the end of the job, after your build steps, only if the job
+      succeeded. "now" publishes in this step. Empty does not publish'
+  publish_token:
+    required: false
+    description: 'qpackages.com token. Required to publish'
+  version:
+    required: false
+    description: 'Version to publish, without "v". Defaults to the git tag (v1.2.3 → 1.2.3), then to qpm2.json'
+  tag:
+    required: false
+    description: 'Github release tag to upload to. Defaults to the git tag, then to the version. Packages may share it'
+  upload_release:
+    required: false
+    description:
+      'Upload the qpkg, qmod and binaries to the Github release. When false, they are only built and qpm2 publish is
+      skipped, since there is no qpkg url'
+    default: 'true'
+  upload_qmod:
+    required: false
+    description:
+      'Build and upload the qmod. Empty detects it: only if the package has a mod template (qmod.template or
+      mod.template.json)'
+    default: ''
+  upload_binaries:
+    required: false
+    description: 'Upload workspace.outBinaries to the Github release'
     default: 'true'
 
   workflow_token:
     required: false
-    description: 'Specifies the workflow Github Secret Token required for some functionality'
-  publish_token:
-    required: false
-    description: 'The token required for publishing to qpackages.com'
+    description: 'Github token used to download QPM and upload release assets. Needs contents: write to publish'
+    default: ${{ github.token }}
+
+outputs:
+  qpm_path:
+    description: 'Path to the qpm2 executable'
+  version:
+    description: 'Package version used'
+  qpkg_url:
+    description: 'Url of the uploaded qpkg. Only set with publish: now'
+  qmod_url:
+    description: 'Url of the uploaded qmod. Only set with publish: now'
 
 runs:
-  using: node20
+  using: node24
   main: dist/index.js
   post: 'dist/post/index.js'
   post-if: success()

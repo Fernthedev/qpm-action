@@ -1,8 +1,10 @@
-import { GitHub } from '@actions/github/lib/utils.js'
 import * as github from '@actions/github'
 import * as core from '@actions/core'
 
 import * as node_os from 'os'
+
+/** Authenticated Github client */
+export type Octokit = ReturnType<typeof github.getOctokit>
 
 export const QPM_EXECUTABLE_NAME = 'qpm2'
 
@@ -25,7 +27,7 @@ export function getQPM_ReleaseExecutableName(platform?: string, arch?: string): 
   return `${getQPM_ArtifactExecutableName(platform, arch)}.zip`
 }
 
-async function findReleaseId(octokit: InstanceType<typeof GitHub>, releaseTag: string): Promise<number | undefined> {
+async function findReleaseId(octokit: Octokit, releaseTag: string): Promise<number | undefined> {
   try {
     const release = await octokit.rest.repos.getReleaseByTag({
       tag: releaseTag,
@@ -42,7 +44,7 @@ async function findReleaseId(octokit: InstanceType<typeof GitHub>, releaseTag: s
  * Get the release for the tag, creating it if missing.
  * Several packages may share a release, so a release created concurrently by another job is reused
  */
-export async function getOrMakeRelease(octokit: InstanceType<typeof GitHub>, releaseTag: string): Promise<number> {
+export async function getOrMakeRelease(octokit: Octokit, releaseTag: string): Promise<number> {
   const existing = await findReleaseId(octokit, releaseTag)
   if (existing !== undefined) return existing
 

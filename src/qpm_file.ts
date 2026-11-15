@@ -29,6 +29,7 @@ export interface QPMPackage {
   }
   qmod?: {
     output?: string
+    template?: string
     id?: string
     downloadUrl?: string
     [key: string]: unknown

@@ -15,11 +15,13 @@ jobs:
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         id: setup-node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -47,12 +49,23 @@ jobs:
     steps:
       - name: Checkout
         id: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # uses the defaults, including the github.token default for workflow_token
       - name: Test Local Action
         id: test-action
         uses: ./
         with:
-          workflow_token: ${{secrets.GITHUB_TOKEN}}
           restore: false
           cache: false
+
+      - name: Check Outputs
+        env:
+          QPM_PATH: ${{ steps.test-action.outputs.qpm_path }}
+          VERSION: ${{ steps.test-action.outputs.version }}
+        run: |
+          test -n "$QPM_PATH" && test -n "$VERSION"
+          "$QPM_PATH" --version
+          qpm2 --version
